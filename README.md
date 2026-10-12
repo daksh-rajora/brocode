@@ -89,10 +89,7 @@ JWT_SECRET=your_jwt_secret_key_min_32_characters_long_for_security
 JWT_EXPIRES_IN=7d
 CLIENT_URL=http://localhost:5173
 
-# Admin Initial Setup Bootstrap (Used by npm run seed:admin)
-ADMIN_NAME=Hostel Warden
-ADMIN_EMAIL=admin@brocode.hostel
-ADMIN_PASSWORD=change_this_password_123
+
 ```
 
 ### Client (`client/.env`)
