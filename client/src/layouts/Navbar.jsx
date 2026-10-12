@@ -37,26 +37,23 @@ export const Navbar = () => {
     <>
       <header className="sticky top-0 z-40 bg-[#111111] text-white border-b border-[#222222]">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Top Bar matching Image 2 */}
-          <div className="flex items-center justify-between h-14 sm:h-16">
-            {/* Left: Hamburger menu icon matching Image 2 */}
+          {/* Mobile Top Bar (< sm): ONLY Centered BroCode Logo */}
+          <div className="sm:hidden flex items-center justify-center h-14 w-full">
+            <Logo theme="dark" />
+          </div>
+
+          {/* Desktop & Tablet Top Bar (>= sm): Full Navigation */}
+          <div className="hidden sm:flex items-center justify-between h-14 sm:h-16">
+            {/* Left: Tablet Menu Drawer Toggle + Logo */}
             <div className="flex items-center space-x-3">
               <button
                 onClick={() => setDrawerOpen(true)}
-                className="p-1.5 rounded-lg text-white hover:text-brand-orange hover:bg-[#1E1E1E] transition-colors"
+                className="md:hidden p-1.5 rounded-lg text-white hover:text-brand-orange hover:bg-[#1E1E1E] transition-colors"
                 aria-label="Open Navigation Menu"
               >
                 <Menu className="w-6 h-6 stroke-[2.4]" />
               </button>
 
-              {/* Desktop Logo (placed next to menu or in center) */}
-              <div className="hidden sm:block">
-                <Logo theme="dark" />
-              </div>
-            </div>
-
-            {/* Center: BroCode with Crowns matching Image 2 */}
-            <div className="sm:hidden absolute left-1/2 -translate-x-1/2">
               <Logo theme="dark" />
             </div>
 
