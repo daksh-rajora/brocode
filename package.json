@@ -1,0 +1,35 @@
+{
+  "name": "bro-code",
+  "version": "1.0.0",
+  "description": "Bro Code - Hostel-focused midnight snack ordering full-stack web application",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client",
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"blue,magenta\" \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build:client": "npm run build --prefix client",
+    "test": "npm run test --prefix server && npm run test --prefix client",
+    "test:server": "npm run test --prefix server",
+    "test:client": "npm run test --prefix client",
+    "seed": "npm run seed --prefix server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "keywords": [
+    "mern",
+    "ecommerce",
+    "hostel",
+    "midnight-snacks",
+    "express",
+    "react",
+    "mongodb"
+  ],
+  "author": "Bro Code Engineering Team",
+  "license": "ISC"
+}

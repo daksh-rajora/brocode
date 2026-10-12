@@ -1,0 +1,22 @@
+export const sendSuccess = (res, data = null, message = 'Success', statusCode = 200) => {
+  return res.status(statusCode).json({
+    success: true,
+    message,
+    data,
+    timestamp: new Date().toISOString(),
+  });
+};
+
+export const sendError = (res, message = 'An error occurred', statusCode = 400, errors = null) => {
+  const payload = {
+    success: false,
+    message,
+    timestamp: new Date().toISOString(),
+  };
+
+  if (errors) {
+    payload.errors = errors;
+  }
+
+  return res.status(statusCode).json(payload);
+};
