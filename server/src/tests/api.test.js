@@ -1,23 +1,29 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import mongoose from 'mongoose';
+import bcrypt from 'bcryptjs';
 import app from '../app.js';
 import { connectDB, closeDB } from '../config/db.js';
 import { User } from '../models/User.js';
 import { generateToken } from '../utils/token.js';
+import { ensureAdminSeed } from '../services/adminSeedService.js';
 
 let adminToken = '';
 
 beforeAll(async () => {
   await connectDB();
-  let admin = await User.findOne({ role: 'admin' });
+  const knownHash = await bcrypt.hash('CorrectAdminPassword123!', 10);
+  let admin = await User.findOne({ email: 'admin_test@brocode.hostel' });
   if (!admin) {
     admin = await User.create({
       name: 'Admin Test',
       email: 'admin_test@brocode.hostel',
-      passwordHash: '$2a$10$abcdefghijklmnopqrstuvwxyz123456',
+      passwordHash: knownHash,
       role: 'admin',
     });
+  } else {
+    admin.passwordHash = knownHash;
+    await admin.save();
   }
   adminToken = generateToken(admin);
 });
@@ -152,14 +158,53 @@ describe('Bro Code Backend API Suite', () => {
 
 
 
-  describe('POST /api/v1/auth/login', () => {
-    it('should reject invalid credentials with 401', async () => {
+  describe('Authentication & Admin Login Suite', () => {
+    it('should reject invalid credentials with 401 when email does not exist', async () => {
       const res = await request(app).post('/api/v1/auth/login').send({
         email: 'invalid_nonexistent@brocode.hostel',
         password: 'wrong_password_123',
       });
       expect(res.status).toBe(401);
       expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('Invalid email or password credentials');
+    });
+
+    it('should reject invalid credentials with 401 when password does not match', async () => {
+      const res = await request(app).post('/api/v1/auth/login').send({
+        email: 'admin_test@brocode.hostel',
+        password: 'IncorrectPassword999!',
+      });
+      expect(res.status).toBe(401);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toBe('Invalid email or password credentials');
+    });
+
+    it('should successfully login with valid credentials, returning JWT token and safe user', async () => {
+      const res = await request(app).post('/api/v1/auth/login').send({
+        email: 'admin_test@brocode.hostel',
+        password: 'CorrectAdminPassword123!',
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data).toHaveProperty('token');
+      expect(res.body.data.user.email).toBe('admin_test@brocode.hostel');
+      expect(res.body.data.user).not.toHaveProperty('passwordHash');
+    });
+
+    it('should verify password hashing and comparison via comparePassword method', async () => {
+      const admin = await User.findOne({ email: 'admin_test@brocode.hostel' });
+      expect(admin).toBeDefined();
+      const match = await admin.comparePassword('CorrectAdminPassword123!');
+      const noMatch = await admin.comparePassword('WrongPassword');
+      expect(match).toBe(true);
+      expect(noMatch).toBe(false);
+    });
+
+    it('should idempotently seed admin without overwriting existing accounts (ensureAdminSeed)', async () => {
+      const result = await ensureAdminSeed();
+      expect(result).toBeDefined();
+      const count = await User.countDocuments({ role: 'admin' });
+      expect(count).toBeGreaterThan(0);
     });
   });
 

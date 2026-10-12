@@ -35,6 +35,11 @@ export const connectDB = async (customUri) => {
       connectTimeoutMS: 10000,
     });
     console.log(`[Database] MongoDB Connected: ${conn.connection.host}/${conn.connection.name}`);
+    if (conn.connection.name === 'test' && !primaryUri.includes('/test')) {
+      console.warn(
+        `[Database Notice] Connected to default database 'test'. If you intend to use a dedicated database, add '/brocode' to MONGODB_URI in Render dashboard.`
+      );
+    }
     return conn;
   } catch (error) {
     console.error(`[Database Error] Connection failed to ${sanitized}: ${error.message}`);

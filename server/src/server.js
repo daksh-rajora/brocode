@@ -4,11 +4,13 @@ import app, { isOriginAllowed } from './app.js';
 import { connectDB, closeDB } from './config/db.js';
 import { config } from './config/env.js';
 import { initSocket } from './services/socketService.js';
+import { ensureAdminSeed } from './services/adminSeedService.js';
 
 const startServer = async () => {
   try {
     try {
       await connectDB();
+      await ensureAdminSeed();
     } catch (dbError) {
       console.error(`[Server Database Notice] Database connection error during startup: ${dbError.message}`);
       console.warn('[Server Database Notice] HTTP server will start in degraded mode. Database-dependent endpoints will return 503 until connection is restored.');

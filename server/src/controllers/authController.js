@@ -2,12 +2,23 @@ import bcrypt from 'bcryptjs';
 import { User } from '../models/User.js';
 import { generateToken } from '../utils/token.js';
 import { sendSuccess, sendError } from '../utils/apiResponse.js';
+import { ensureAdminSeed } from '../services/adminSeedService.js';
 
 export const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
+    const cleanEmail = (email || '').toLowerCase().trim();
 
-    const user = await User.findOne({ email: email.toLowerCase().trim() });
+    let user = await User.findOne({ email: cleanEmail });
+    if (!user) {
+      // If no admin user exists in DB, run safe idempotent auto-seed
+      const count = await User.countDocuments({ role: 'admin' });
+      if (count === 0) {
+        await ensureAdminSeed();
+        user = await User.findOne({ email: cleanEmail });
+      }
+    }
+
     if (!user) {
       return sendError(res, 'Invalid email or password credentials', 401);
     }
@@ -41,7 +52,11 @@ export const getProfile = async (req, res) => {
 
 export const checkAdminExists = async (req, res, next) => {
   try {
-    const count = await User.countDocuments();
+    let count = await User.countDocuments({ role: 'admin' });
+    if (count === 0) {
+      await ensureAdminSeed();
+      count = await User.countDocuments({ role: 'admin' });
+    }
     return sendSuccess(res, { hasAdmin: count > 0 }, 'Admin status checked');
   } catch (error) {
     next(error);
