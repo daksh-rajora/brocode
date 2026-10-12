@@ -1,34 +1,72 @@
 import mongoose from 'mongoose';
 import { config } from './env.js';
 
+// Disable Mongoose command buffering when disconnected to prevent 10000ms buffering timeouts
+mongoose.set('bufferCommands', false);
+
+/**
+ * Return a sanitized URI for safe console logging without exposing passwords
+ */
+export const getSanitizedUri = (uri) => {
+  if (!uri || typeof uri !== 'string') return '(empty-uri)';
+  try {
+    const parsed = new URL(uri);
+    const authPart = parsed.username ? '***:***@' : '';
+    return `${parsed.protocol}//${authPart}${parsed.host}${parsed.pathname || ''}`;
+  } catch {
+    return '(invalid-uri)';
+  }
+};
+
+/**
+ * Connect to MongoDB database
+ * @param {string} [customUri] Optional custom MongoDB URI (e.g. for testing)
+ */
 export const connectDB = async (customUri) => {
   const primaryUri = customUri || config.mongodbUri;
+  const sanitized = getSanitizedUri(primaryUri);
+  const isCloudOrProd = config.isProduction || Boolean(process.env.RENDER);
+
   try {
+    console.log(`[Database] Connecting to ${sanitized}...`);
     const conn = await mongoose.connect(primaryUri, {
-      autoIndex: true,
+      autoIndex: !config.isProduction,
       serverSelectionTimeoutMS: 5000,
+      connectTimeoutMS: 10000,
     });
     console.log(`[Database] MongoDB Connected: ${conn.connection.host}/${conn.connection.name}`);
     return conn;
   } catch (error) {
-    console.error(`[Database Error] Connection failed: ${error.message}`);
-    // If remote connection failed with auth/network error in dev/test, fallback to local mongo
-    if (config.nodeEnv !== 'production' && !primaryUri.includes('127.0.0.1') && !primaryUri.includes('localhost')) {
+    console.error(`[Database Error] Connection failed to ${sanitized}: ${error.message}`);
+
+    // Fall back to local MongoDB ONLY in local development and NEVER on Render or in production
+    const isLocalFallbackAllowed =
+      !isCloudOrProd &&
+      !primaryUri.includes('127.0.0.1') &&
+      !primaryUri.includes('localhost') &&
+      !process.env.CI;
+
+    if (isLocalFallbackAllowed) {
       try {
-        console.log('[Database] Attempting local MongoDB fallback at mongodb://127.0.0.1:27017/brocode...');
+        console.log('[Database] Attempting local development MongoDB fallback at mongodb://127.0.0.1:27017/brocode...');
         const localConn = await mongoose.connect('mongodb://127.0.0.1:27017/brocode', {
-          autoIndex: true,
           serverSelectionTimeoutMS: 2000,
         });
         console.log(`[Database] Local MongoDB Connected: ${localConn.connection.host}/${localConn.connection.name}`);
         return localConn;
       } catch (fallbackError) {
-        console.warn(`[Database] Local fallback also unavailable: ${fallbackError.message}`);
+        console.warn(`[Database] Local fallback unavailable: ${fallbackError.message}`);
       }
     }
-    if (config.nodeEnv === 'production') {
-      process.exit(1);
+
+    if (isCloudOrProd) {
+      console.error(
+        `[Database Fatal] MongoDB connection failure in production environment (${sanitized}). ` +
+        `Action Required: In Render Dashboard, ensure MONGODB_URI is configured with valid MongoDB Atlas credentials and that Atlas Network Access allows 0.0.0.0/0.`
+      );
     }
+
+    throw error;
   }
 };
 

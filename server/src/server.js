@@ -7,7 +7,12 @@ import { initSocket } from './services/socketService.js';
 
 const startServer = async () => {
   try {
-    await connectDB();
+    try {
+      await connectDB();
+    } catch (dbError) {
+      console.error(`[Server Database Notice] Database connection error during startup: ${dbError.message}`);
+      console.warn('[Server Database Notice] HTTP server will start in degraded mode. Database-dependent endpoints will return 503 until connection is restored.');
+    }
 
     const httpServer = http.createServer(app);
     const io = new Server(httpServer, {

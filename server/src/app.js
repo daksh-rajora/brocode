@@ -9,6 +9,10 @@ import { notFoundHandler, errorHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
 
+// Trust the single nearest reverse proxy (Render edge router/load balancer)
+// Resolves ERR_ERL_UNEXPECTED_X_FORWARDED_FOR and enables accurate client IP rate limiting
+app.set('trust proxy', 1);
+
 // Security headers
 app.use(
   helmet({
