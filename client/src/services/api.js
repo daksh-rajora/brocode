@@ -83,7 +83,6 @@ export const apiService = {
   login: (credentials) => api.post('/auth/login', credentials),
   getProfile: () => api.get('/auth/me'),
   checkAdminExists: () => api.get('/auth/status'),
-  bootstrapAdmin: (data) => api.post('/auth/setup', data),
 };
 
 export default api;

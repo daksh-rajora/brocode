@@ -62,37 +62,3 @@ export const checkAdminExists = async (req, res, next) => {
     next(error);
   }
 };
-
-export const bootstrapAdmin = async (req, res, next) => {
-  try {
-    const count = await User.countDocuments();
-    if (count > 0) {
-      return sendError(res, 'An administrator account is already registered.', 403);
-    }
-
-    const { name, email, password } = req.body;
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(password, salt);
-
-    const newAdmin = await User.create({
-      name,
-      email: email.toLowerCase().trim(),
-      passwordHash,
-      role: 'admin',
-    });
-
-    const token = generateToken(newAdmin);
-
-    return sendSuccess(
-      res,
-      {
-        token,
-        user: newAdmin.toSafeObject(),
-      },
-      'Initial admin account initialized successfully',
-      201
-    );
-  } catch (error) {
-    next(error);
-  }
-};

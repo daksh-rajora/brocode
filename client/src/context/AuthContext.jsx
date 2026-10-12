@@ -85,20 +85,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const bootstrapAdmin = async (adminData) => {
-    dispatch({ type: 'SET_LOADING', payload: true });
-    try {
-      const response = await apiService.bootstrapAdmin(adminData);
-      const { token, user } = response.data;
-      localStorage.setItem(TOKEN_KEY, token);
-      dispatch({ type: 'LOGIN_SUCCESS', payload: { token, user } });
-      return { success: true, user };
-    } catch (error) {
-      dispatch({ type: 'SET_LOADING', payload: false });
-      throw error;
-    }
-  };
-
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
     dispatch({ type: 'LOGOUT' });
@@ -112,7 +98,6 @@ export const AuthProvider = ({ children }) => {
         isAuthenticated: state.isAuthenticated,
         isLoading: state.isLoading,
         login,
-        bootstrapAdmin,
         logout,
       }}
     >

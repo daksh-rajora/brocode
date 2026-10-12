@@ -206,6 +206,15 @@ describe('Bro Code Backend API Suite', () => {
       const count = await User.countDocuments({ role: 'admin' });
       expect(count).toBeGreaterThan(0);
     });
+
+    it('should disallow public admin creation via POST /api/v1/auth/setup', async () => {
+      const res = await request(app).post('/api/v1/auth/setup').send({
+        name: 'Attacker',
+        email: 'attacker@evil.com',
+        password: 'password123',
+      });
+      expect(res.status).toBe(404);
+    });
   });
 
   describe('404 Route Handler', () => {

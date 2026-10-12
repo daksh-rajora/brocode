@@ -27,19 +27,27 @@ export const connectDB = async (customUri) => {
   const sanitized = getSanitizedUri(primaryUri);
   const isCloudOrProd = config.isProduction || Boolean(process.env.RENDER);
 
+  const connectOptions = {
+    autoIndex: !config.isProduction,
+    serverSelectionTimeoutMS: 5000,
+    connectTimeoutMS: 10000,
+  };
+
+  // If primaryUri doesn't specify an explicit database name in its path, default to 'brocode'
+  try {
+    const parsed = new URL(primaryUri);
+    const pathDb = parsed.pathname.replace(/^\//, '').trim();
+    if (!pathDb) {
+      connectOptions.dbName = process.env.MONGODB_DB_NAME || 'brocode';
+    }
+  } catch {
+    // Ignore URL parse fallback
+  }
+
   try {
     console.log(`[Database] Connecting to ${sanitized}...`);
-    const conn = await mongoose.connect(primaryUri, {
-      autoIndex: !config.isProduction,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 10000,
-    });
+    const conn = await mongoose.connect(primaryUri, connectOptions);
     console.log(`[Database] MongoDB Connected: ${conn.connection.host}/${conn.connection.name}`);
-    if (conn.connection.name === 'test' && !primaryUri.includes('/test')) {
-      console.warn(
-        `[Database Notice] Connected to default database 'test'. If you intend to use a dedicated database, add '/brocode' to MONGODB_URI in Render dashboard.`
-      );
-    }
     return conn;
   } catch (error) {
     console.error(`[Database Error] Connection failed to ${sanitized}: ${error.message}`);
