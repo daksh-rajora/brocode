@@ -39,6 +39,17 @@ export const errorHandler = (err, req, res, next) => {
     message = 'Malformed JSON in request payload';
   }
 
+  // Handle MongoDB connection errors, server selection timeouts, and bad auth
+  if (
+    err.name === 'MongooseServerSelectionError' ||
+    err.name === 'MongoServerSelectionError' ||
+    err.name === 'MongoNetworkError' ||
+    (err.name === 'MongoServerError' && (err.code === 8000 || err.message?.includes('auth')))
+  ) {
+    statusCode = 503;
+    message = 'Database service is currently unavailable. Please verify MongoDB Atlas connection string and user credentials.';
+  }
+
   if (config.nodeEnv !== 'test') {
     console.error(`[Error] [${req.method} ${req.originalUrl}]:`, err.message);
     if (statusCode === 500) {

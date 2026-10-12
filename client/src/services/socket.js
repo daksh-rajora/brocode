@@ -1,14 +1,12 @@
 import { io } from 'socket.io-client';
+import { apiBaseUrl } from './api';
 
 let socket = null;
 
 export const getSocket = () => {
   if (!socket) {
-    const socketUrl =
-      import.meta.env.VITE_SOCKET_URL ||
-      (typeof window !== 'undefined' && window.location.hostname === 'localhost'
-        ? 'http://localhost:5000'
-        : '/');
+    const defaultSocketHost = apiBaseUrl.replace(/\/api\/v1\/?$/, '').replace(/\/+$/, '');
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || defaultSocketHost || 'http://localhost:5000';
 
     socket = io(socketUrl, {
       transports: ['websocket', 'polling'],

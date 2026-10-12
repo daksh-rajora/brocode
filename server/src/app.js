@@ -16,23 +16,40 @@ app.use(
   })
 );
 
-// CORS configuration supporting client origin and local development
-const allowedOrigins = [
-  config.clientUrl,
+// Parse configured client URLs from CLIENT_URL (supports comma-separated list or single URL)
+const configuredClientOrigins = (config.clientUrl || '')
+  .split(',')
+  .map((url) => url.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+const staticAllowedOrigins = [
+  ...configuredClientOrigins,
   'http://localhost:5173',
+  'http://localhost:5174',
   'http://localhost:3000',
   'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
   'http://127.0.0.1:3000',
 ];
+
+export const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Server-to-server, curl, Postman, mobile webviews
+  const cleanOrigin = origin.replace(/\/+$/, '');
+  if (staticAllowedOrigins.includes(cleanOrigin)) return true;
+  // Allow Netlify production & deploy previews (*.netlify.app)
+  if (/\.netlify\.app$/.test(cleanOrigin)) return true;
+  // Allow local development ports
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(cleanOrigin)) return true;
+  return false;
+};
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
-      if (!origin || allowedOrigins.includes(origin)) {
+      if (isOriginAllowed(origin)) {
         callback(null, true);
       } else {
-        callback(null, true); // Permissive in development for smooth local preview
+        callback(new Error(`Origin ${origin} not allowed by CORS`));
       }
     },
     credentials: true,

@@ -81,8 +81,19 @@ describe('Cloudinary & Product Endpoints Suite', () => {
     });
 
     it('GET /api/v1/products/:idOrSlug retrieves product by ID and by slug', async () => {
-      const productsRes = await request(app).get('/api/v1/products?limit=1');
-      const testItem = productsRes.body.data?.[0];
+      let productsRes = await request(app).get('/api/v1/products?limit=1');
+      let testItem = productsRes.body.data?.[0];
+      if (!testItem) {
+        const created = await Product.create({
+          name: 'Catalogue Test Snack',
+          description: 'Delicious midnight crispy snack',
+          price: 40,
+          stock: 10,
+          category: 'Snacks',
+          imageUrl: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+        });
+        testItem = created.toObject();
+      }
       expect(testItem).toBeDefined();
 
       // Retrieve by _id
@@ -95,7 +106,7 @@ describe('Cloudinary & Product Endpoints Suite', () => {
       if (testItem.slug) {
         const bySlugRes = await request(app).get(`/api/v1/products/${testItem.slug}`);
         expect(bySlugRes.status).toBe(200);
-        expect(bySlugRes.body.data._id).toBe(testItem._id);
+        expect(bySlugRes.body.data._id).toBe(String(testItem._id));
       }
     });
   });
