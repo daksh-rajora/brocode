@@ -9,8 +9,6 @@ import {
   AlertCircle,
   QrCode,
   Copy,
-  Info,
-  CheckCircle2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import qrCodeImg from '../assets/qr.jpeg';
@@ -101,6 +99,8 @@ export const CheckoutPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (loading) return;
+
     if (unavailableCartItem) {
       toast.error(`"${unavailableCartItem.product.name}" is out of stock. Please remove it from your cart.`);
       navigate('/cart');
@@ -126,13 +126,8 @@ export const CheckoutPage = () => {
       return;
     }
 
-    if (settings && subtotal < settings.minOrderAmount) {
-      toast.error(`Minimum order amount is ₹${settings.minOrderAmount}`);
-      return;
-    }
-
     if (formData.paymentMethod === 'upi' && !paymentConfirmed) {
-      toast.error('Please complete the UPI payment and confirm above before placing the order.');
+      toast.error(`Please confirm that you have completed the UPI payment of ${formatCurrency(totalAmount)}`);
       return;
     }
 
@@ -146,6 +141,7 @@ export const CheckoutPage = () => {
         roomNumber: formData.roomNumber.trim(),
         deliveryNotes: formData.deliveryNotes.trim(),
         paymentMethod: formData.paymentMethod,
+        customerConfirmedPayment: formData.paymentMethod === 'upi' ? paymentConfirmed : false,
         orderType,
         items: items.map((item) => ({
           productId: item.product._id,
@@ -478,18 +474,6 @@ export const CheckoutPage = () => {
                 </div>
               </div>
 
-              {/* Safe Flow Notice Explaining Pending Verification Limitation */}
-              <div className="bg-[#181818] border border-[#2E2E2E] rounded-xl p-3 text-[11px] text-slate-300 space-y-1">
-                <div className="flex items-center space-x-1.5 text-brand-orange font-bold text-xs">
-                  <Info className="w-3.5 h-3.5" />
-                  <span>Pending Verification Process</span>
-                </div>
-                <p className="text-slate-400 leading-normal">
-                  Static QR scanning does not provide automatic instant bank webhooks. Once submitted, your order will be placed with{' '}
-                  <span className="text-amber-300 font-bold">"Pending Verification"</span> status until verified by our hostel delivery bro.
-                </p>
-              </div>
-
               {/* Customer Payment Confirmation */}
               <label className="flex items-start space-x-3 p-3 bg-[#181818] border border-[#2E2E2E] hover:border-brand-orange/50 rounded-xl cursor-pointer transition-colors">
                 <input
@@ -504,7 +488,7 @@ export const CheckoutPage = () => {
                     I have completed the UPI payment of {formatCurrency(totalAmount)}
                   </div>
                   <div className="text-[10px] text-slate-400 mt-0.5">
-                    Check this box to confirm and submit your order for delivery verification.
+                    Tick after completing the payment in your UPI app to place your order.
                   </div>
                 </div>
               </label>
@@ -542,13 +526,7 @@ export const CheckoutPage = () => {
               disabled={loading}
               className="py-3 px-8 rounded-full bg-brand-orange hover:bg-brand-yellow text-black font-black text-sm flex items-center space-x-2 shadow-brand transition-transform active:scale-95 disabled:opacity-50 cursor-pointer"
             >
-              <span>
-                {loading
-                  ? 'Placing Order...'
-                  : formData.paymentMethod === 'upi'
-                  ? 'Confirm Order (Pending Verification)'
-                  : 'Confirm Order'}
-              </span>
+              <span>{loading ? 'Placing Order...' : 'Confirm Order'}</span>
               <ArrowRight className="w-4 h-4 stroke-[3]" />
             </button>
           </div>

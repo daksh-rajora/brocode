@@ -20,6 +20,7 @@ export const createOrderSchema = z.object({
     .enum(['cash_on_delivery', 'upi', 'upi_on_delivery', 'pay_at_room'])
     .optional()
     .default('upi'),
+  customerConfirmedPayment: z.boolean().optional(),
   orderType: z.enum(['delivery', 'pickup']).optional().default('delivery'),
   deliveryNotes: z.string().max(300).optional().default(''),
 });

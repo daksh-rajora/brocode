@@ -279,4 +279,160 @@ describe('UPI QR Payment Flow & Admin Verification Suite', () => {
     const dbOrder = await Order.findById(orderId);
     expect(dbOrder.paymentStatus).toBe('pending_verification');
   });
+
+  describe('Zero Minimum Order Restriction & Dynamic Amounts (₹12, ₹32, >₹50)', () => {
+    let snack12;
+    let snack22;
+
+    beforeEach(async () => {
+      snack12 = await Product.create({
+        name: 'UPI Test Snack ₹12 Mini Stick',
+        category: 'munchies',
+        price: 12,
+        costPrice: 6,
+        stock: 25,
+        image: '/packs/lays.jpg',
+        description: 'Affordable mini snack',
+        isAvailable: true,
+        isActive: true,
+      });
+
+      snack22 = await Product.create({
+        name: 'UPI Test Snack ₹22 Munch',
+        category: 'munchies',
+        price: 22,
+        costPrice: 12,
+        stock: 30,
+        image: '/packs/lays.jpg',
+        description: 'Snack munch for testing',
+        isAvailable: true,
+        isActive: true,
+      });
+    });
+
+    it('should successfully place an order with total amount = ₹12 (below legacy ₹50 minimum)', async () => {
+      const res = await request(app)
+        .post('/api/v1/orders')
+        .send({
+          studentName: 'Mini Buyer',
+          studentPhone: '9900881122',
+          hostelBlock: 'BH2',
+          roomNumber: '105',
+          paymentMethod: 'upi',
+          orderType: 'pickup', // Pickup has ₹0 delivery fee -> total = ₹12
+          customerConfirmedPayment: true,
+          items: [{ productId: snack12._id.toString(), quantity: 1 }],
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      const order = res.body.data;
+
+      expect(order.subtotal).toBe(12);
+      expect(order.deliveryFee).toBe(0);
+      expect(order.totalAmount).toBe(12);
+      expect(order.paymentMethod).toBe('upi');
+      expect(order.paymentStatus).toBe('pending_verification');
+      expect(order.customerConfirmedPayment).toBe(true);
+
+      // Verify appearance in admin portal
+      const adminRes = await request(app)
+        .get('/api/v1/orders/admin/all')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(adminRes.status).toBe(200);
+      const found = adminRes.body.data.orders.find((o) => o.orderNumber === order.orderNumber);
+      expect(found).toBeDefined();
+      expect(found.totalAmount).toBe(12);
+      expect(found.studentName).toBe('Mini Buyer');
+      expect(found.paymentMethod).toBe('upi');
+      expect(found.paymentStatus).toBe('pending_verification');
+    });
+
+    it('should successfully place an order with total amount = ₹32 (e.g. ₹22 + ₹10 delivery)', async () => {
+      // Set delivery fee to ₹10
+      await StoreSetting.findOneAndUpdate({}, { deliveryFee: 10 });
+
+      const res = await request(app)
+        .post('/api/v1/orders')
+        .send({
+          studentName: 'Mid Buyer',
+          studentPhone: '9900883344',
+          hostelBlock: 'BH3-A',
+          roomNumber: '302',
+          paymentMethod: 'cash_on_delivery',
+          orderType: 'delivery',
+          items: [{ productId: snack22._id.toString(), quantity: 1 }],
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      const order = res.body.data;
+
+      expect(order.subtotal).toBe(22);
+      expect(order.deliveryFee).toBe(10);
+      expect(order.totalAmount).toBe(32);
+      expect(order.paymentMethod).toBe('cash_on_delivery');
+      expect(order.paymentStatus).toBe('pending');
+      expect(order.customerConfirmedPayment).toBe(false);
+
+      // Verify appearance in admin portal
+      const adminRes = await request(app)
+        .get('/api/v1/orders/admin/all')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(adminRes.status).toBe(200);
+      const found = adminRes.body.data.orders.find((o) => o.orderNumber === order.orderNumber);
+      expect(found).toBeDefined();
+      expect(found.totalAmount).toBe(32);
+      expect(found.paymentMethod).toBe('cash_on_delivery');
+      expect(found.paymentStatus).toBe('pending');
+    });
+
+    it('should successfully place an order with total amount above ₹50 (e.g. ₹95) and display in admin portal', async () => {
+      await StoreSetting.findOneAndUpdate({}, { deliveryFee: 15 });
+
+      const res = await request(app)
+        .post('/api/v1/orders')
+        .send({
+          studentName: 'Large Order Buyer',
+          studentPhone: '9900885566',
+          hostelBlock: 'BH1',
+          roomNumber: '410',
+          paymentMethod: 'upi',
+          orderType: 'delivery',
+          customerConfirmedPayment: true,
+          items: [{ productId: testSnack._id.toString(), quantity: 2 }],
+        });
+
+      expect(res.status).toBe(201);
+      const order = res.body.data;
+      expect(order.subtotal).toBe(80);
+      expect(order.deliveryFee).toBe(15);
+      expect(order.totalAmount).toBe(95);
+      expect(order.totalAmount).toBeGreaterThan(50);
+      expect(order.paymentMethod).toBe('upi');
+      expect(order.paymentStatus).toBe('pending_verification');
+      expect(order.customerConfirmedPayment).toBe(true);
+
+      // Verify admin portal orders ledger returns all order details
+      const adminRes = await request(app)
+        .get('/api/v1/orders/admin/all')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(adminRes.status).toBe(200);
+      const found = adminRes.body.data.orders.find((o) => o.orderNumber === order.orderNumber);
+      expect(found).toBeDefined();
+      expect(found.studentName).toBe('Large Order Buyer');
+      expect(found.hostelBlock).toBe('BH1');
+      expect(found.roomNumber).toBe('410');
+      expect(found.studentPhone).toBe('9900885566');
+      expect(found.items.length).toBe(1);
+      expect(found.items[0].quantity).toBe(2);
+      expect(found.subtotal).toBe(80);
+      expect(found.deliveryFee).toBe(15);
+      expect(found.totalAmount).toBe(95);
+      expect(found.paymentMethod).toBe('upi');
+      expect(found.paymentStatus).toBe('pending_verification');
+      expect(found.status).toBe('placed');
+      expect(found.createdAt).toBeDefined();
+    });
+  });
 });

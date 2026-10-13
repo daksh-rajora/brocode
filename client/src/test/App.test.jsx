@@ -818,24 +818,29 @@ describe('Bro Code Frontend Component Suite', () => {
         expect(screen.getByTestId('upi-recipient-name')).toHaveTextContent('Dheeraj');
         expect(screen.getByTestId('upi-id-display')).toHaveTextContent('dheerajbhardwaj621@oksbi');
 
-        // Confirmation checkbox
+        // Confirmation checkbox with dynamic order total
         expect(screen.getByTestId('upi-payment-confirm-checkbox')).toBeInTheDocument();
+        expect(screen.getByText(/I have completed the UPI payment of/i)).toBeInTheDocument();
 
-        // Button text indicates Pending Verification
+        // Pending Verification Process notice removed from Checkout UI
+        expect(screen.queryByText(/Pending Verification Process/i)).not.toBeInTheDocument();
+
+        // Button text is simply Confirm Order
         expect(
-          screen.getByRole('button', { name: /Confirm Order \(Pending Verification\)/i })
+          screen.getByRole('button', { name: /Confirm Order/i })
         ).toBeInTheDocument();
       });
 
       it('should hide the QR code section when Cash on Delivery is selected', async () => {
         vi.spyOn(apiService, 'getSettings').mockResolvedValue({
-          data: { isOpen: true, deliveryFee: 15, minOrderAmount: 20 },
+          data: { isOpen: true, deliveryFee: 15, minOrderAmount: 0 },
         });
 
         renderCheckoutWithItem({ paymentMethod: 'cash_on_delivery' });
 
         // QR section should NOT be in the document
         expect(screen.queryByTestId('upi-qr-section')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('upi-payment-confirm-checkbox')).not.toBeInTheDocument();
 
         // Confirm button for COD
         expect(screen.getByRole('button', { name: /Confirm Order/i })).toBeInTheDocument();
@@ -843,14 +848,14 @@ describe('Bro Code Frontend Component Suite', () => {
 
       it('should prevent submission of UPI orders if customer has not checked the payment confirmation', async () => {
         vi.spyOn(apiService, 'getSettings').mockResolvedValue({
-          data: { isOpen: true, deliveryFee: 15, minOrderAmount: 20 },
+          data: { isOpen: true, deliveryFee: 15, minOrderAmount: 0 },
         });
         const createOrderSpy = vi.spyOn(apiService, 'createOrder');
 
         renderCheckoutWithItem({ paymentMethod: 'upi' });
 
         const submitBtn = screen.getByRole('button', {
-          name: /Confirm Order \(Pending Verification\)/i,
+          name: /Confirm Order/i,
         });
 
         // Submit without checking the confirmation checkbox
@@ -862,7 +867,7 @@ describe('Bro Code Frontend Component Suite', () => {
 
       it('should submit UPI order when customer confirms payment', async () => {
         vi.spyOn(apiService, 'getSettings').mockResolvedValue({
-          data: { isOpen: true, deliveryFee: 15, minOrderAmount: 20 },
+          data: { isOpen: true, deliveryFee: 15, minOrderAmount: 0 },
         });
         const createOrderSpy = vi.spyOn(apiService, 'createOrder').mockResolvedValue({
           data: {
@@ -881,7 +886,7 @@ describe('Bro Code Frontend Component Suite', () => {
 
         // Submit order
         const submitBtn = screen.getByRole('button', {
-          name: /Confirm Order \(Pending Verification\)/i,
+          name: /Confirm Order/i,
         });
         fireEvent.click(submitBtn);
 
@@ -893,6 +898,39 @@ describe('Bro Code Frontend Component Suite', () => {
               studentPhone: '9876543210',
               hostelBlock: 'BH1',
               roomNumber: '306',
+              customerConfirmedPayment: true,
+            })
+          );
+        });
+      });
+
+      it('should allow checkout for orders of any positive amount like ₹12 and ₹32 without minimum restriction', async () => {
+        vi.spyOn(apiService, 'getSettings').mockResolvedValue({
+          data: { isOpen: true, deliveryFee: 0, minOrderAmount: 0 },
+        });
+        const createOrderSpy = vi.spyOn(apiService, 'createOrder').mockResolvedValue({
+          data: {
+            _id: 'order-low-1',
+            orderNumber: 'BRO-261013-LOW',
+            totalAmount: 12,
+            paymentMethod: 'cash_on_delivery',
+          },
+        });
+
+        // Render with item worth ₹12
+        renderCheckoutWithItem({
+          items: [{ product: { _id: 'prod-12', name: 'Choco Stick', price: 12, stock: 10, isAvailable: true }, quantity: 1 }],
+          paymentMethod: 'cash_on_delivery',
+        });
+
+        const submitBtn = screen.getByRole('button', { name: /Confirm Order/i });
+        fireEvent.click(submitBtn);
+
+        await waitFor(() => {
+          expect(createOrderSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+              paymentMethod: 'cash_on_delivery',
+              studentName: 'Daksh Rajora',
             })
           );
         });

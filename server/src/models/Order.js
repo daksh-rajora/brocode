@@ -110,6 +110,14 @@ const orderSchema = new mongoose.Schema(
       default: 'pending',
       index: true,
     },
+    customerConfirmedPayment: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    paymentConfirmedAt: {
+      type: Date,
+    },
     status: {
       type: String,
       enum: ['placed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'],

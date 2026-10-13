@@ -644,11 +644,12 @@ export const AdminOrdersPage = () => {
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-600 mt-0.5">
-                      Recipient: <strong className="text-slate-800 font-bold">Dheeraj</strong> (
-                      <span className="font-mono text-slate-700">dheerajbhardwaj621@oksbi</span>) • Amount:{' '}
+                      Customer confirmed UPI transfer of{' '}
                       <strong className="text-brand-orange font-bold">
                         {formatCurrency(selectedOrder.totalAmount)}
-                      </strong>
+                      </strong>{' '}
+                      to <strong className="text-slate-800 font-bold">Dheeraj</strong> (
+                      <span className="font-mono text-slate-700">dheerajbhardwaj621@oksbi</span>).
                     </p>
                   </div>
 

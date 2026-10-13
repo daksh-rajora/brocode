@@ -21,6 +21,7 @@ export const orderService = {
     roomNumber,
     items,
     paymentMethod = 'upi',
+    customerConfirmedPayment: clientConfirmed,
     orderType = 'delivery',
     deliveryNotes = '',
   }) {
@@ -87,14 +88,6 @@ export const orderService = {
       });
     }
 
-    if (subtotal < settings.minOrderAmount) {
-      const err = new Error(
-        `Minimum order amount is ₹${settings.minOrderAmount}. Current subtotal: ₹${subtotal}`
-      );
-      err.statusCode = 400;
-      throw err;
-    }
-
     // Deduct stock atomically with rollback safeguard
     const deductedItems = [];
     try {
@@ -140,6 +133,8 @@ export const orderService = {
 
       const isUpi = paymentMethod === 'upi' || paymentMethod === 'upi_on_delivery';
       const paymentStatus = isUpi ? 'pending_verification' : 'pending';
+      const customerConfirmedPayment = isUpi ? Boolean(clientConfirmed ?? true) : false;
+      const paymentConfirmedAt = customerConfirmedPayment ? new Date() : undefined;
 
       const order = await Order.create({
         orderNumber,
@@ -153,6 +148,8 @@ export const orderService = {
         totalAmount,
         paymentMethod,
         paymentStatus,
+        customerConfirmedPayment,
+        paymentConfirmedAt,
         orderType,
         deliveryNotes,
         status: 'placed',
@@ -163,8 +160,8 @@ export const orderService = {
             status: 'placed',
             timestamp: new Date(),
             note: isUpi
-              ? `Order placed via UPI (Pending Verification). Fulfillment queued for ${hostelBlock}, ${roomNumber}.`
-              : `Order received (${orderType === 'pickup' ? 'Self Pickup' : 'Hostel Delivery'}) for ${hostelBlock}, ${roomNumber}.`,
+              ? `Order placed via UPI. Customer confirmed payment of ₹${totalAmount}. Awaiting delivery bro verification.`
+              : `Order received (${orderType === 'pickup' ? 'Self Pickup' : 'Hostel Delivery'}) for ${hostelBlock}, ${roomNumber}. Payment via Cash on Delivery.`,
             updatedBy: 'student',
           },
         ],
