@@ -20,10 +20,17 @@ export const cloudinaryService = {
       throw error;
     }
 
+    const fileSizeKb = (buffer.length / 1024).toFixed(1);
+    const startTime = Date.now();
+    console.log(`[Cloudinary Diagnostic] Starting upload: ${fileSizeKb} KB, folder="${folder}"`);
+
     return new Promise((resolve, reject) => {
+      let isSettled = false;
+
       const uploadOptions = {
         folder,
         resource_type: 'image',
+        timeout: 60000, // 60s socket timeout for Cloudinary upload
         transformation: [
           { quality: 'auto:good' },
           { fetch_format: 'auto' },
@@ -35,12 +42,20 @@ export const cloudinaryService = {
       }
 
       const stream = cloudinary.uploader.upload_stream(uploadOptions, (error, result) => {
+        if (isSettled) return;
+        isSettled = true;
+        const durationMs = Date.now() - startTime;
+
         if (error) {
-          console.error('[Cloudinary] Upload stream failed:', error.message);
+          console.error(`[Cloudinary Diagnostic] Upload failed after ${durationMs}ms: ${error.message}`);
           const err = new Error(error.message || 'Failed to upload image to Cloudinary.');
           err.statusCode = 502;
           return reject(err);
         }
+
+        console.log(
+          `[Cloudinary Diagnostic] Upload succeeded in ${durationMs}ms. public_id="${result.public_id}", bytes=${result.bytes}, format=${result.format}`
+        );
 
         resolve({
           secure_url: result.secure_url,
@@ -50,6 +65,16 @@ export const cloudinaryService = {
           width: result.width,
           height: result.height,
         });
+      });
+
+      stream.on('error', (streamErr) => {
+        if (isSettled) return;
+        isSettled = true;
+        const durationMs = Date.now() - startTime;
+        console.error(`[Cloudinary Diagnostic] Stream error after ${durationMs}ms: ${streamErr.message}`);
+        const err = new Error(streamErr.message || 'Cloudinary stream error.');
+        err.statusCode = 502;
+        reject(err);
       });
 
       stream.end(buffer);

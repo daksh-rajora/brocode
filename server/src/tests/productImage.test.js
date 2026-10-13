@@ -70,6 +70,22 @@ describe('Cloudinary & Product Endpoints Suite', () => {
       expect(res.body.success).toBe(false);
       expect(res.body.message).toContain('Only JPEG, PNG, and WebP');
     });
+
+    it('should reject file sizes exceeding 5 MB limit with 400 and clear error', async () => {
+      // Allocate 5.2 MB buffer
+      const oversizedBuffer = Buffer.alloc(5.2 * 1024 * 1024, 'a');
+      const res = await request(app)
+        .post('/api/v1/products/upload-image')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .attach('image', oversizedBuffer, {
+          filename: 'oversized_snack.jpg',
+          contentType: 'image/jpeg',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.message).toMatch(/too large|5 MB/i);
+    });
   });
 
   describe('Product Catalogue & Featured Endpoints', () => {

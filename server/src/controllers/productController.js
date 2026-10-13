@@ -60,12 +60,24 @@ export const uploadProductImage = async (req, res, next) => {
       return sendError(res, 'No image file uploaded. Please upload a JPEG, PNG, or WebP image.', 400);
     }
 
-    const uploadResults = await Promise.all(
-      filesToUpload.map((file) =>
-        cloudinaryService.uploadImageBuffer(file.buffer, {
-          folder: 'brocode/products',
-        })
-      )
+    const totalBytes = filesToUpload.reduce((acc, f) => acc + (f.size || f.buffer?.length || 0), 0);
+    const startBatch = Date.now();
+    console.log(
+      `[Upload API Diagnostic] Received ${filesToUpload.length} image(s) for upload, total size: ${(totalBytes / 1024).toFixed(1)} KB`
+    );
+
+    // Upload sequentially to conserve container memory & network bandwidth
+    const uploadResults = [];
+    for (let i = 0; i < filesToUpload.length; i++) {
+      const file = filesToUpload[i];
+      const res = await cloudinaryService.uploadImageBuffer(file.buffer, {
+        folder: 'brocode/products',
+      });
+      uploadResults.push(res);
+    }
+
+    console.log(
+      `[Upload API Diagnostic] Completed ${uploadResults.length} image(s) upload in ${Date.now() - startBatch}ms`
     );
 
     const uploadedImages = uploadResults.map((result, idx) => ({
@@ -100,15 +112,15 @@ export const uploadProductImage = async (req, res, next) => {
 
 export const createProduct = async (req, res, next) => {
   try {
-    // If files were attached via multipart form, upload all to Cloudinary
+    // If files were attached via multipart form, upload all to Cloudinary sequentially
     if (req.allImageFiles && req.allImageFiles.length > 0) {
-      const uploadResults = await Promise.all(
-        req.allImageFiles.map((file) =>
-          cloudinaryService.uploadImageBuffer(file.buffer, {
-            folder: 'brocode/products',
-          })
-        )
-      );
+      const uploadResults = [];
+      for (const file of req.allImageFiles) {
+        const res = await cloudinaryService.uploadImageBuffer(file.buffer, {
+          folder: 'brocode/products',
+        });
+        uploadResults.push(res);
+      }
       const uploadedImages = uploadResults.map((result, idx) => ({
         url: result.secure_url,
         publicId: result.public_id,
@@ -147,15 +159,15 @@ export const createProduct = async (req, res, next) => {
 
 export const updateProduct = async (req, res, next) => {
   try {
-    // If files were attached via multipart form, upload to Cloudinary
+    // If files were attached via multipart form, upload to Cloudinary sequentially
     if (req.allImageFiles && req.allImageFiles.length > 0) {
-      const uploadResults = await Promise.all(
-        req.allImageFiles.map((file) =>
-          cloudinaryService.uploadImageBuffer(file.buffer, {
-            folder: 'brocode/products',
-          })
-        )
-      );
+      const uploadResults = [];
+      for (const file of req.allImageFiles) {
+        const res = await cloudinaryService.uploadImageBuffer(file.buffer, {
+          folder: 'brocode/products',
+        });
+        uploadResults.push(res);
+      }
       const uploadedImages = uploadResults.map((result, idx) => ({
         url: result.secure_url,
         publicId: result.public_id,

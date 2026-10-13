@@ -119,22 +119,13 @@ export const AdminProductsPage = () => {
       brand: '',
       weight: '',
       description: '',
-      image: '/packs/lays.jpg',
-      imageUrl: '/packs/lays.jpg',
+      image: '',
+      imageUrl: '',
       cloudinaryPublicId: null,
       isActive: true,
       isAvailable: true,
     });
-    setImageList([
-      {
-        id: 'default-pack',
-        file: null,
-        url: '/packs/lays.jpg',
-        publicId: null,
-        isCover: true,
-        order: 0,
-      },
-    ]);
+    setImageList([]);
     setUploadProgress(0);
     setIsUploading(false);
     setUploadError(null);
@@ -256,6 +247,9 @@ export const AdminProductsPage = () => {
         publicId: null,
         isCover: false,
         order: imageList.length + idx,
+        status: 'idle',
+        progress: 0,
+        error: null,
       }));
 
       setImageList((prev) => {
@@ -315,6 +309,9 @@ export const AdminProductsPage = () => {
               file,
               url: URL.createObjectURL(file),
               publicId: null,
+              status: 'idle',
+              progress: 0,
+              error: null,
             }
           : item
       )
@@ -322,6 +319,134 @@ export const AdminProductsPage = () => {
     toast.success('Image replaced');
     setReplacingId(null);
     e.target.value = '';
+  };
+
+  const handleRetryImage = async (targetId) => {
+    if (isUploading || submitting) return;
+    const targetItem = imageList.find((i) => i.id === targetId);
+    if (!targetItem || !targetItem.file) return;
+
+    try {
+      setIsUploading(true);
+      setUploadError(null);
+      setImageList((prev) =>
+        prev.map((img) =>
+          img.id === targetId
+            ? { ...img, status: 'uploading', progress: 15, error: null }
+            : img
+        )
+      );
+
+      const uploadRes = await apiService.uploadProductImage(targetItem.file, (progressEvent) => {
+        if (progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setImageList((prev) =>
+            prev.map((img) =>
+              img.id === targetId ? { ...img, progress: Math.min(95, percent) } : img
+            )
+          );
+        }
+      });
+
+      const uploadedUrl =
+        uploadRes.data?.imageUrl || uploadRes.data?.secure_url || uploadRes.data?.url;
+      const uploadedPublicId =
+        uploadRes.data?.cloudinaryPublicId ||
+        uploadRes.data?.public_id ||
+        uploadRes.data?.publicId ||
+        null;
+
+      setImageList((prev) =>
+        prev.map((img) =>
+          img.id === targetId
+            ? {
+                ...img,
+                file: null,
+                url: uploadedUrl,
+                publicId: uploadedPublicId,
+                status: 'success',
+                progress: 100,
+                error: null,
+              }
+            : img
+        )
+      );
+      toast.success(`Successfully uploaded "${targetItem.file.name}"`);
+    } catch (err) {
+      console.error('[Upload Retry Error]', err);
+      const errMsg = err.message || 'Retry failed. Check network or file size.';
+      setImageList((prev) =>
+        prev.map((img) =>
+          img.id === targetId ? { ...img, status: 'error', error: errMsg, progress: 0 } : img
+        )
+      );
+      setUploadError(`Failed to upload "${targetItem.file.name}": ${errMsg}`);
+      toast.error(`Retry failed: ${errMsg}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleRetryAllFailed = async () => {
+    if (isUploading || submitting) return;
+    const failedItems = imageList.filter((i) => i.status === 'error' && i.file);
+    if (failedItems.length === 0) return;
+
+    setIsUploading(true);
+    setUploadError(null);
+    let working = [...imageList];
+
+    for (const item of failedItems) {
+      setImageList((prev) =>
+        prev.map((img) =>
+          img.id === item.id ? { ...img, status: 'uploading', progress: 15, error: null } : img
+        )
+      );
+
+      try {
+        const uploadRes = await apiService.uploadProductImage(item.file, (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            setImageList((prev) =>
+              prev.map((img) =>
+                img.id === item.id ? { ...img, progress: Math.min(95, percent) } : img
+              )
+            );
+          }
+        });
+
+        const uploadedUrl =
+          uploadRes.data?.imageUrl || uploadRes.data?.secure_url || uploadRes.data?.url;
+        const uploadedPublicId =
+          uploadRes.data?.cloudinaryPublicId ||
+          uploadRes.data?.public_id ||
+          uploadRes.data?.publicId ||
+          null;
+
+        working = working.map((img) =>
+          img.id === item.id
+            ? {
+                ...img,
+                file: null,
+                url: uploadedUrl,
+                publicId: uploadedPublicId,
+                status: 'success',
+                progress: 100,
+                error: null,
+              }
+            : img
+        );
+        setImageList([...working]);
+      } catch (err) {
+        const errMsg = err.message || 'Retry failed.';
+        working = working.map((img) =>
+          img.id === item.id ? { ...img, status: 'error', error: errMsg, progress: 0 } : img
+        );
+        setImageList([...working]);
+        setUploadError(errMsg);
+      }
+    }
+    setIsUploading(false);
   };
 
   const handleSetCover = (targetId) => {
@@ -448,6 +573,8 @@ export const AdminProductsPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting || isUploading) return;
+
     if (!form.name.trim()) {
       toast.error('Please enter a product name');
       return;
@@ -469,53 +596,84 @@ export const AdminProductsPage = () => {
 
       if (filesToUpload.length > 0) {
         setIsUploading(true);
-        setUploadProgress(15);
-        try {
-          const fileObjects = filesToUpload.map((i) => i.file);
-          const uploadRes = await apiService.uploadProductImages(fileObjects, (progressEvent) => {
-            if (progressEvent.total) {
-              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-              setUploadProgress(Math.min(95, percent));
-            }
-          });
+        setUploadProgress(0);
 
-          setUploadProgress(100);
-          const uploadedResults = uploadRes.data?.images || [
-            {
-              url: uploadRes.data?.imageUrl || uploadRes.data?.secure_url,
-              publicId: uploadRes.data?.cloudinaryPublicId || uploadRes.data?.public_id,
-            },
-          ];
+        for (let i = 0; i < filesToUpload.length; i++) {
+          const item = filesToUpload[i];
+          const itemIdx = workingList.findIndex((w) => w.id === item.id);
+          if (itemIdx === -1) continue;
 
-          let uploadIdx = 0;
-          workingList = workingList.map((item) => {
-            if (item.file) {
-              const res = uploadedResults[uploadIdx++];
-              return {
-                ...item,
-                file: null,
-                url: res?.url || res?.secure_url || item.url,
-                publicId: res?.publicId || res?.cloudinaryPublicId || null,
-              };
-            }
-            return item;
-          });
-        } catch (uploadErr) {
-          const errMsg =
-            uploadErr.message ||
-            'Failed to upload image(s) to Cloudinary. Please check your network and configuration.';
-          setUploadError(errMsg);
-          toast.error(errMsg);
-          setIsUploading(false);
-          setSubmitting(false);
-          return;
+          // Set status of current item to uploading
+          workingList[itemIdx] = {
+            ...workingList[itemIdx],
+            status: 'uploading',
+            progress: 10,
+            error: null,
+          };
+          setImageList([...workingList]);
+
+          try {
+            const uploadRes = await apiService.uploadProductImage(item.file, (progressEvent) => {
+              if (progressEvent.total) {
+                const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                const overallPercent = Math.round(
+                  ((i + percent / 100) / filesToUpload.length) * 100
+                );
+                setUploadProgress(Math.min(98, overallPercent));
+                setImageList((prev) =>
+                  prev.map((img) =>
+                    img.id === item.id ? { ...img, progress: Math.min(95, percent) } : img
+                  )
+                );
+              }
+            });
+
+            const uploadedUrl =
+              uploadRes.data?.imageUrl || uploadRes.data?.secure_url || uploadRes.data?.url;
+            const uploadedPublicId =
+              uploadRes.data?.cloudinaryPublicId ||
+              uploadRes.data?.public_id ||
+              uploadRes.data?.publicId ||
+              null;
+
+            workingList[itemIdx] = {
+              ...workingList[itemIdx],
+              file: null,
+              url: uploadedUrl,
+              publicId: uploadedPublicId,
+              status: 'success',
+              progress: 100,
+              error: null,
+            };
+            setImageList([...workingList]);
+            setUploadProgress(Math.round(((i + 1) / filesToUpload.length) * 100));
+          } catch (uploadErr) {
+            console.error('[Upload Single Error]', uploadErr);
+            const errMsg = uploadErr.message || 'Image upload failed.';
+            workingList[itemIdx] = {
+              ...workingList[itemIdx],
+              status: 'error',
+              error: errMsg,
+              progress: 0,
+            };
+            setImageList([...workingList]);
+            const fullError = `Failed to upload "${item.file.name}": ${errMsg}. Please click Retry on that image or remove it to proceed.`;
+            setUploadError(fullError);
+            toast.error(fullError);
+            setIsUploading(false);
+            setSubmitting(false);
+            return;
+          }
         }
+        setIsUploading(false);
       }
 
-      // Safeguard: Do not save temporary blob URLs
-      const hasBlob = workingList.some((img) => img.url && img.url.startsWith('blob:'));
-      if (hasBlob) {
-        const err = 'Temporary local image could not be processed. Please retry upload.';
+      // Safeguard: Do not save temporary blob URLs or items in error state
+      const hasBlobOrError = workingList.some(
+        (img) => img.status === 'error' || (img.url && img.url.startsWith('blob:'))
+      );
+      if (hasBlobOrError) {
+        const err = 'Some images could not be uploaded. Please retry failed images or remove them.';
         setUploadError(err);
         toast.error(err);
         setSubmitting(false);
@@ -863,7 +1021,7 @@ export const AdminProductsPage = () => {
                       <Upload className="w-6 h-6 stroke-[2.5]" />
                     </div>
                     <span className="text-xs font-bold text-slate-800">
-                      Click to upload snack images, or drag & drop multiple files
+                      Add Images — Click to upload snack images, or drag & drop multiple files
                     </span>
                     <span className="text-[11px] text-slate-400 mt-1">
                       Select multiple JPEG, PNG, or WebP images up to 5 MB each
@@ -929,7 +1087,7 @@ export const AdminProductsPage = () => {
                           </div>
 
                           {/* Thumbnail preview image */}
-                          <div className="w-full aspect-square rounded-xl bg-slate-50/80 p-2 flex items-center justify-center mb-2 overflow-hidden">
+                          <div className="w-full aspect-square rounded-xl bg-slate-50/80 p-2 flex items-center justify-center mb-2 overflow-hidden relative">
                             <img
                               src={imgItem.url}
                               alt={`Product image ${idx + 1}`}
@@ -939,6 +1097,54 @@ export const AdminProductsPage = () => {
                                   'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80';
                               }}
                             />
+
+                            {/* Uploading Status Overlay */}
+                            {imgItem.status === 'uploading' && (
+                              <div
+                                data-testid={`uploading-overlay-${idx}`}
+                                className="absolute inset-0 bg-black/75 backdrop-blur-[1px] flex flex-col items-center justify-center p-2 text-white rounded-xl"
+                              >
+                                <Loader2 className="w-5 h-5 animate-spin text-brand-orange mb-1" />
+                                <span className="text-[10px] font-bold">Uploading...</span>
+                                <span className="text-[9px] text-amber-300 font-bold">{imgItem.progress || 0}%</span>
+                              </div>
+                            )}
+
+                            {/* Failed Status Overlay with Retry button */}
+                            {imgItem.status === 'error' && (
+                              <div
+                                data-testid={`error-overlay-${idx}`}
+                                className="absolute inset-0 bg-rose-950/85 backdrop-blur-[1px] flex flex-col items-center justify-center p-1.5 text-white rounded-xl text-center"
+                              >
+                                <AlertCircle className="w-4 h-4 text-rose-400 mb-0.5" />
+                                <span className="text-[9px] font-bold text-rose-200 leading-tight mb-1">
+                                  Upload Failed
+                                </span>
+                                <button
+                                  type="button"
+                                  data-testid={`retry-image-btn-${idx}`}
+                                  disabled={isUploading || submitting}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRetryImage(imgItem.id);
+                                  }}
+                                  className="px-2 py-0.5 bg-brand-orange hover:bg-amber-400 text-black font-extrabold text-[9px] rounded-md shadow-xs transition-transform active:scale-95 disabled:opacity-50"
+                                >
+                                  Retry
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Success indicator (for uploaded Cloudinary image) */}
+                            {imgItem.status === 'success' && imgItem.url && !imgItem.url.startsWith('blob:') && (
+                              <div
+                                data-testid={`success-badge-${idx}`}
+                                className="absolute top-1.5 right-1.5 bg-emerald-500 text-white rounded-full p-0.5 shadow-xs"
+                                title="Uploaded successfully to Cloudinary"
+                              >
+                                <Check className="w-2.5 h-2.5 stroke-[3]" />
+                              </div>
+                            )}
                           </div>
 
                           {/* Control buttons toolbar */}
@@ -1038,12 +1244,26 @@ export const AdminProductsPage = () => {
 
                 {/* Upload Error Banner */}
                 {uploadError && (
-                  <div className="flex items-start space-x-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
-                    <div className="flex-1">
-                      <span className="font-bold">Upload Error: </span>
-                      <span>{uploadError}</span>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                    <div className="flex items-start space-x-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                      <div className="flex-1">
+                        <span className="font-bold">Upload Error: </span>
+                        <span>{uploadError}</span>
+                      </div>
                     </div>
+                    {imageList.some((i) => i.status === 'error' && i.file) && (
+                      <button
+                        type="button"
+                        data-testid="retry-failed-all-btn"
+                        disabled={isUploading || submitting}
+                        onClick={handleRetryAllFailed}
+                        className="self-start sm:self-auto shrink-0 inline-flex items-center gap-1.5 px-3 py-1 bg-brand-orange hover:bg-amber-400 text-black font-bold text-xs rounded-lg transition-colors disabled:opacity-50 shadow-xs active:scale-95"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>Retry Failed ({imageList.filter((i) => i.status === 'error' && i.file).length})</span>
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -1114,7 +1334,8 @@ export const AdminProductsPage = () => {
               </button>
               <button
                 type="submit"
-                disabled={submitting || isUploading}
+                disabled={submitting || isUploading || imageList.length === 0}
+                title={imageList.length === 0 ? 'Please add at least one product image' : ''}
                 className="px-7 py-2.5 rounded-xl bg-brand-orange hover:bg-brand-yellow text-black font-black text-xs shadow-md transition-all active:scale-95 disabled:opacity-50 flex items-center space-x-2"
               >
                 {(submitting || isUploading) && (
@@ -1131,6 +1352,15 @@ export const AdminProductsPage = () => {
                 </span>
               </button>
             </div>
+            {imageList.length === 0 && (
+              <div
+                data-testid="no-image-validation-notice"
+                className="flex items-center space-x-1.5 text-[11px] font-semibold text-amber-700 bg-amber-50/80 border border-amber-200/80 rounded-xl px-3 py-1.5"
+              >
+                <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span>At least one product image is required to save.</span>
+              </div>
+            )}
           </div>
 
           {/* Right Col: Product Preview Card matching Middle-Right Mockup */}
@@ -1155,30 +1385,49 @@ export const AdminProductsPage = () => {
               </button>
 
               {/* Product Cover Image */}
-              <div className="w-full aspect-square rounded-xl bg-slate-50/70 p-4 flex items-center justify-center mb-3 relative">
-                <img
-                  src={
-                    (imageList.find((img) => img.isCover)?.url ||
-                      imageList[0]?.url ||
-                      '/packs/lays.jpg')
-                  }
-                  alt={form.name || 'Snack'}
-                  className="max-h-full max-w-full object-contain"
-                  onError={(e) => {
-                    e.target.src =
-                      'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80';
-                  }}
-                />
-                {imageList.length > 1 && (
-                  <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white font-bold text-[9px] backdrop-blur-xs">
-                    {imageList.length} images
-                  </span>
+              <div
+                data-testid="product-preview-cover-container"
+                className="w-full aspect-square rounded-xl bg-slate-50/70 p-4 flex items-center justify-center mb-3 relative overflow-hidden border border-slate-100"
+              >
+                {imageList.length > 0 ? (
+                  <>
+                    <img
+                      data-testid="product-preview-cover-img"
+                      src={
+                        (imageList.find((img) => img.isCover)?.url || imageList[0]?.url)
+                      }
+                      alt={form.name || 'Snack'}
+                      className="max-h-full max-w-full object-contain"
+                      onError={(e) => {
+                        e.target.src =
+                          'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80';
+                      }}
+                    />
+                    {imageList.length > 1 && (
+                      <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white font-bold text-[9px] backdrop-blur-xs">
+                        {imageList.length} images
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <div
+                    data-testid="product-preview-empty-placeholder"
+                    className="flex flex-col items-center justify-center text-center p-3 text-slate-400 select-none"
+                  >
+                    <div className="w-12 h-12 rounded-full bg-slate-100/90 flex items-center justify-center mb-2 text-slate-400 border border-slate-200/70">
+                      <ImageIcon className="w-6 h-6 stroke-[1.8]" />
+                    </div>
+                    <span className="text-xs font-bold text-slate-600">No Image Selected</span>
+                    <span className="text-[10px] text-slate-400 mt-0.5">
+                      Upload an image or pick a preset to preview
+                    </span>
+                  </div>
                 )}
               </div>
 
               {/* Title */}
               <h4 className="text-sm font-bold text-slate-900 line-clamp-1 mb-2">
-                {form.name || "Lay's Classic Salted (52g)"}
+                {form.name || 'Snack Name'}
               </h4>
 
               {/* Price & In Stock pill */}
@@ -1206,7 +1455,7 @@ export const AdminProductsPage = () => {
               {/* Description snippet */}
               <p className="text-[11px] text-slate-500 leading-relaxed line-clamp-2">
                 {form.description ||
-                  'Classic salted potato chips with the perfect crunch. A timeless favourite for every mood.'}
+                  'Delicious midnight hostel snack treat.'}
               </p>
             </div>
           </div>

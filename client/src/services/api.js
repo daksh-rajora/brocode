@@ -6,6 +6,9 @@ export const apiBaseUrl = cleanBaseUrl.endsWith('/api/v1')
   ? cleanBaseUrl
   : `${cleanBaseUrl}/api/v1`;
 
+export const UPLOAD_TIMEOUT_MS =
+  parseInt(import.meta.env.VITE_UPLOAD_TIMEOUT_MS, 10) || 90000; // 90 seconds for file transfers
+
 const api = axios.create({
   baseURL: apiBaseUrl,
   headers: {
@@ -30,12 +33,31 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
-    const message =
-      error.response?.data?.message ||
-      error.message ||
-      'An unexpected network error occurred';
+    const isTimeout =
+      error.code === 'ECONNABORTED' ||
+      (typeof error.message === 'string' && error.message.toLowerCase().includes('timeout'));
+    const isNetworkError = !error.response && Boolean(error.request);
+
+    let message;
+    if (isTimeout) {
+      message = 'Upload timed out. The network or server took too long. Please click Retry or try a smaller image.';
+    } else if (isNetworkError) {
+      message = 'Network disconnected. Please check your internet connection and try again.';
+    } else {
+      message =
+        error.response?.data?.message ||
+        error.message ||
+        'An unexpected network error occurred';
+    }
+
     const errors = error.response?.data?.errors;
-    return Promise.reject({ message, errors, status: error.response?.status });
+    return Promise.reject({
+      message,
+      errors,
+      status: error.response?.status || (isTimeout ? 408 : 0),
+      isTimeout,
+      isNetworkError,
+    });
   }
 );
 
@@ -52,20 +74,23 @@ export const apiService = {
   getProducts: (params) => api.get('/products', { params }),
   getFeaturedProducts: (params) => api.get('/products/featured', { params }),
   getProductById: (id) => api.get(`/products/${id}`),
-  uploadProductImage: (fileOrFormData, onUploadProgress) => {
+  uploadProductImage: (fileOrFormData, onUploadProgress, options = {}) => {
     let formData = fileOrFormData;
     if (fileOrFormData instanceof File || fileOrFormData instanceof Blob) {
       formData = new FormData();
       formData.append('image', fileOrFormData);
     }
+    const timeout = options.timeout || UPLOAD_TIMEOUT_MS;
     return api.post('/products/upload-image', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      timeout,
       onUploadProgress,
+      ...options,
     });
   },
-  uploadProductImages: (filesOrFormData, onUploadProgress) => {
+  uploadProductImages: (filesOrFormData, onUploadProgress, options = {}) => {
     let formData = filesOrFormData;
     if (Array.isArray(filesOrFormData) || filesOrFormData instanceof FileList) {
       formData = new FormData();
@@ -76,11 +101,14 @@ export const apiService = {
       formData = new FormData();
       formData.append('images', filesOrFormData);
     }
+    const timeout = options.timeout || UPLOAD_TIMEOUT_MS;
     return api.post('/products/upload-image', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
+      timeout,
       onUploadProgress,
+      ...options,
     });
   },
   createProduct: (data) => api.post('/products', data),

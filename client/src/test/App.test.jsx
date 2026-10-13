@@ -266,6 +266,12 @@ describe('Bro Code Frontend Component Suite', () => {
       const priceInput = screen.getByPlaceholderText('e.g. 20');
       fireEvent.change(priceInput, { target: { value: '25' } });
 
+      // Add a product image
+      const urlInput = screen.getByPlaceholderText('Or paste direct image URL (https://...)');
+      const addUrlBtn = screen.getByTestId('add-image-url-btn');
+      fireEvent.change(urlInput, { target: { value: '/packs/lays.jpg' } });
+      fireEvent.click(addUrlBtn);
+
       const submitBtn = screen.getByRole('button', { name: /Save Product/i });
       fireEvent.click(submitBtn);
 
@@ -558,13 +564,22 @@ describe('Bro Code Frontend Component Suite', () => {
           expect(screen.getByText('Add New Product')).toBeInTheDocument();
         });
 
-        // Initially has default preset image (1 image)
-        expect(screen.getByTestId('admin-image-count-badge')).toHaveTextContent('1 image');
+        // Initially has no images selected (0 images)
+        expect(screen.getByTestId('admin-image-count-badge')).toHaveTextContent('0 images');
 
-        // Add a second image via URL
+        // Add first image via URL
         const urlInput = screen.getByPlaceholderText('Or paste direct image URL (https://...)');
         const addUrlBtn = screen.getByTestId('add-image-url-btn');
 
+        fireEvent.change(urlInput, {
+          target: { value: 'https://images.unsplash.com/photo-popcorn-angle1.jpg' },
+        });
+        fireEvent.click(addUrlBtn);
+
+        // First added image becomes cover automatically
+        expect(screen.getByTestId('admin-image-count-badge')).toHaveTextContent('1 image');
+
+        // Add a second image via URL
         fireEvent.change(urlInput, {
           target: { value: 'https://images.unsplash.com/photo-popcorn-angle2.jpg' },
         });
@@ -594,9 +609,12 @@ describe('Bro Code Frontend Component Suite', () => {
           expect(screen.getByText('Add New Product')).toBeInTheDocument();
         });
 
-        // Add 2 more images via URL
+        // Add 3 images via URL
         const urlInput = screen.getByPlaceholderText('Or paste direct image URL (https://...)');
         const addUrlBtn = screen.getByTestId('add-image-url-btn');
+
+        fireEvent.change(urlInput, { target: { value: 'https://image-1.jpg' } });
+        fireEvent.click(addUrlBtn);
 
         fireEvent.change(urlInput, { target: { value: 'https://image-2.jpg' } });
         fireEvent.click(addUrlBtn);
