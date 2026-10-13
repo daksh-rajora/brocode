@@ -109,6 +109,8 @@ const productSchema = new mongoose.Schema(
         if (!ret.image && ret.imageUrl) ret.image = ret.imageUrl;
         if (ret.isActive === undefined) ret.isActive = ret.isAvailable ?? true;
         if (ret.isAvailable === undefined) ret.isAvailable = ret.isActive ?? true;
+        if (ret.sellingPrice === undefined && ret.price !== undefined) ret.sellingPrice = ret.price;
+        if (ret.selling_price === undefined && ret.price !== undefined) ret.selling_price = ret.price;
         return ret;
       },
     },
@@ -119,13 +121,45 @@ const productSchema = new mongoose.Schema(
         if (!ret.image && ret.imageUrl) ret.image = ret.imageUrl;
         if (ret.isActive === undefined) ret.isActive = ret.isAvailable ?? true;
         if (ret.isAvailable === undefined) ret.isAvailable = ret.isActive ?? true;
+        if (ret.sellingPrice === undefined && ret.price !== undefined) ret.sellingPrice = ret.price;
+        if (ret.selling_price === undefined && ret.price !== undefined) ret.selling_price = ret.price;
         return ret;
       },
     },
   }
 );
 
+productSchema.virtual('sellingPrice')
+  .get(function () {
+    return this.price;
+  })
+  .set(function (val) {
+    if (val !== undefined && val !== null && !isNaN(Number(val))) {
+      this.price = Number(val);
+    }
+  });
+
+productSchema.virtual('selling_price')
+  .get(function () {
+    return this.price;
+  })
+  .set(function (val) {
+    if (val !== undefined && val !== null && !isNaN(Number(val))) {
+      this.price = Number(val);
+    }
+  });
+
 productSchema.pre('validate', function (next) {
+  if (this.price === undefined || this.price === null || isNaN(this.price)) {
+    const fallback =
+      this.sellingPrice ??
+      this.selling_price ??
+      (this.get ? this.get('sellingPrice') : undefined) ??
+      (this.get ? this.get('selling_price') : undefined);
+    if (fallback !== undefined && fallback !== null && !isNaN(Number(fallback))) {
+      this.price = Number(fallback);
+    }
+  }
   if (this.name && !this.slug) {
     this.slug = this.name
       .toLowerCase()
@@ -146,6 +180,16 @@ productSchema.pre('validate', function (next) {
 });
 
 productSchema.pre('save', function (next) {
+  if (this.price === undefined || this.price === null || isNaN(this.price)) {
+    const fallback =
+      this.sellingPrice ??
+      this.selling_price ??
+      (this.get ? this.get('sellingPrice') : undefined) ??
+      (this.get ? this.get('selling_price') : undefined);
+    if (fallback !== undefined && fallback !== null && !isNaN(Number(fallback))) {
+      this.price = Number(fallback);
+    }
+  }
   if (this.name && !this.slug) {
     this.slug = this.name
       .toLowerCase()

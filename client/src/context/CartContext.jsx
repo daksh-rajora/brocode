@@ -143,10 +143,11 @@ export const CartProvider = ({ children }) => {
   };
 
   const totalItems = state.items.reduce((acc, item) => acc + item.quantity, 0);
-  const subtotal = state.items.reduce(
-    (acc, item) => acc + (item.product.price || 0) * item.quantity,
-    0
-  );
+  const subtotal = state.items.reduce((acc, item) => {
+    const rawPrice = item.product.price ?? item.product.sellingPrice ?? item.product.selling_price ?? 0;
+    const numPrice = typeof rawPrice === 'number' ? rawPrice : parseFloat(rawPrice) || 0;
+    return acc + numPrice * item.quantity;
+  }, 0);
 
   return (
     <CartContext.Provider

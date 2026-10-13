@@ -93,6 +93,14 @@ export const productService = {
 
   async createProduct(data) {
     try {
+      if (data.price === undefined || data.price === null || isNaN(Number(data.price))) {
+        const fallback = data.sellingPrice ?? data.selling_price;
+        if (fallback !== undefined && fallback !== null && !isNaN(Number(fallback))) {
+          data.price = Number(fallback);
+        }
+      } else {
+        data.price = Number(data.price);
+      }
       return await Product.create(data);
     } catch (error) {
       // If database creation fails, safely cleanup newly uploaded Cloudinary image to prevent orphans
@@ -123,6 +131,15 @@ export const productService = {
       updateData.cloudinaryPublicId !== previousPublicId;
 
     try {
+      if (updateData.price === undefined || updateData.price === null || isNaN(Number(updateData.price))) {
+        const fallback = updateData.sellingPrice ?? updateData.selling_price;
+        if (fallback !== undefined && fallback !== null && !isNaN(Number(fallback))) {
+          updateData.price = Number(fallback);
+        }
+      } else if (updateData.price !== undefined) {
+        updateData.price = Number(updateData.price);
+      }
+
       const updated = await Product.findByIdAndUpdate(id, updateData, {
         new: true,
         runValidators: true,

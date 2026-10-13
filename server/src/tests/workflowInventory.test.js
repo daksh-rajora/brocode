@@ -246,4 +246,111 @@ describe('Requirement 8: Complete Customer-to-Admin Workflow & Real Inventory Te
     expect(finalProduct.stock).toBe(1);
     expect(finalProduct.stock).toBeGreaterThanOrEqual(0);
   });
+
+  describe('Product Pricing & ₹25 Price Persistence Flow', () => {
+    let createdPricingProductId = '';
+    let sellingPriceProductId = '';
+
+    afterAll(async () => {
+      if (createdPricingProductId) {
+        await Product.findByIdAndDelete(createdPricingProductId);
+      }
+      if (sellingPriceProductId) {
+        await Product.findByIdAndDelete(sellingPriceProductId);
+      }
+    });
+
+    it('should create product with price of 25 and save 25 as a valid number in MongoDB', async () => {
+      const payload = {
+        name: 'Kurkure Solid Masti 25',
+        description: 'Iconic crunchy midnight snack priced at exactly 25 rupees',
+        price: 25,
+        sellingPrice: 25,
+        selling_price: 25,
+        stock: 30,
+        image: 'https://res.cloudinary.com/dkuteotny/image/upload/v1791802344/brocode/products/kurkure_25.jpg',
+        imageUrl: 'https://res.cloudinary.com/dkuteotny/image/upload/v1791802344/brocode/products/kurkure_25.jpg',
+        isAvailable: true,
+        isActive: true,
+      };
+
+      const res = await request(app)
+        .post('/api/v1/products')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(payload);
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.price).toBe(25);
+      expect(res.body.data.sellingPrice).toBe(25);
+      expect(res.body.data.selling_price).toBe(25);
+      expect(typeof res.body.data.price).toBe('number');
+      expect(res.body.data.stock).toBe(30);
+
+      createdPricingProductId = res.body.data._id;
+
+      // Verify directly in MongoDB database
+      const dbProduct = await Product.findById(createdPricingProductId);
+      expect(dbProduct).toBeDefined();
+      expect(dbProduct.price).toBe(25);
+      expect(typeof dbProduct.price).toBe('number');
+      expect(dbProduct.sellingPrice).toBe(25);
+      expect(dbProduct.selling_price).toBe(25);
+      expect(dbProduct.stock).toBe(30);
+    });
+
+    it('should create product when payload uses sellingPrice without price', async () => {
+      const payload = {
+        name: 'Choco Delight Bar 25',
+        description: 'Sweet bar priced with sellingPrice property',
+        sellingPrice: 25,
+        stock: 15,
+        image: 'https://res.cloudinary.com/dkuteotny/image/upload/v1791802344/brocode/products/choco_25.jpg',
+        isAvailable: true,
+        isActive: true,
+      };
+
+      const res = await request(app)
+        .post('/api/v1/products')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(payload);
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.price).toBe(25);
+      expect(res.body.data.sellingPrice).toBe(25);
+      expect(res.body.data.selling_price).toBe(25);
+      expect(res.body.data.stock).toBe(15);
+
+      sellingPriceProductId = res.body.data._id;
+
+      const dbProduct = await Product.findById(sellingPriceProductId);
+      expect(dbProduct.price).toBe(25);
+      expect(typeof dbProduct.price).toBe('number');
+      expect(dbProduct.stock).toBe(15);
+    });
+
+    it('should display saved price of 25 after fetching product from catalog and by ID', async () => {
+      // 1. Fetch from public catalog
+      const listRes = await request(app).get('/api/v1/products');
+      expect(listRes.status).toBe(200);
+
+      const found = listRes.body.data.find(
+        (p) => p._id.toString() === createdPricingProductId.toString()
+      );
+      expect(found).toBeDefined();
+      expect(found.price).toBe(25);
+      expect(found.sellingPrice).toBe(25);
+      expect(found.selling_price).toBe(25);
+      expect(found.stock).toBe(30);
+
+      // 2. Fetch by ID
+      const singleRes = await request(app).get(`/api/v1/products/${createdPricingProductId}`);
+      expect(singleRes.status).toBe(200);
+      expect(singleRes.body.data.price).toBe(25);
+      expect(singleRes.body.data.sellingPrice).toBe(25);
+      expect(singleRes.body.data.selling_price).toBe(25);
+      expect(singleRes.body.data.stock).toBe(30);
+    });
+  });
 });

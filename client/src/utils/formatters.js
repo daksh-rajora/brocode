@@ -1,6 +1,8 @@
 export const formatCurrency = (amount) => {
-  if (typeof amount !== 'number') return '₹0';
-  return `₹${amount.toLocaleString('en-IN')}`;
+  if (amount === null || amount === undefined || amount === '') return '₹0';
+  const numeric = typeof amount === 'number' ? amount : Number(amount);
+  if (typeof numeric !== 'number' || isNaN(numeric)) return '₹0';
+  return `₹${numeric.toLocaleString('en-IN')}`;
 };
 
 export const formatDate = (dateString) => {

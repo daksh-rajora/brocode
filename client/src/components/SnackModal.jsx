@@ -94,7 +94,7 @@ export const SnackModal = ({ snack, onClose }) => {
             </div>
 
             <div className="mt-3 text-2xl font-black text-white">
-              {formatCurrency(snack.price)}
+              {formatCurrency(snack.price ?? snack.sellingPrice ?? snack.selling_price)}
             </div>
           </div>
 
@@ -174,7 +174,7 @@ export const SnackModal = ({ snack, onClose }) => {
             <span>
               {isOutOfStock
                 ? 'Currently Sold Out'
-                : `Add to Cart • ${formatCurrency(snack.price * selectedQty)}`}
+                : `Add to Cart • ${formatCurrency((snack.price ?? snack.sellingPrice ?? snack.selling_price ?? 0) * selectedQty)}`}
             </span>
           </button>
         </div>

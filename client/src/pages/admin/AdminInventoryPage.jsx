@@ -229,7 +229,7 @@ export const AdminInventoryPage = () => {
                   <div className="min-w-0">
                     <div className="font-bold text-slate-900 text-xs truncate">{p.name}</div>
                     <div className="text-[10px] text-slate-400 capitalize">
-                      {p.brand || 'Bro Code'} • {formatCurrency(p.price)}
+                      {p.brand || 'Bro Code'} • {formatCurrency(p.price ?? p.sellingPrice ?? p.selling_price)}
                     </div>
                   </div>
                 </div>
@@ -340,7 +340,7 @@ export const AdminInventoryPage = () => {
                       {p.brand || 'Bro Code'}
                     </td>
                     <td className="py-3 px-4 font-black text-slate-900">
-                      {formatCurrency(p.price)}
+                      {formatCurrency(p.price ?? p.sellingPrice ?? p.selling_price)}
                     </td>
                     <td className="py-3 px-4 font-bold">
                       <span className={isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-slate-900'}>

@@ -88,7 +88,7 @@ export const CartPage = () => {
                     {product.name}
                   </h3>
                   <div className="text-xs font-black text-white mt-0.5">
-                    {formatCurrency(product.price)}
+                    {formatCurrency(product.price ?? product.sellingPrice ?? product.selling_price)}
                   </div>
                 </div>
               </div>

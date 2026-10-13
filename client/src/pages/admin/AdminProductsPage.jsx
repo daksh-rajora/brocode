@@ -36,7 +36,9 @@ const PRESET_PACK_IMAGES = [
 const initialProductForm = {
   name: '',
   category: 'general',
-  price: 20,
+  price: '',
+  sellingPrice: '',
+  selling_price: '',
   stock: 25,
   brand: '',
   weight: '',
@@ -105,6 +107,8 @@ export const AdminProductsPage = () => {
       ...initialProductForm,
       name: '',
       price: '',
+      sellingPrice: '',
+      selling_price: '',
       stock: '',
       brand: '',
       weight: '',
@@ -126,10 +130,13 @@ export const AdminProductsPage = () => {
   const handleOpenEdit = (product) => {
     setEditingId(product._id);
     const existingImg = product.imageUrl || product.image || '';
+    const resolvedPrice = product.price ?? product.sellingPrice ?? product.selling_price ?? 20;
     setForm({
       name: product.name || '',
       category: product.category || 'general',
-      price: product.price || 20,
+      price: resolvedPrice,
+      sellingPrice: resolvedPrice,
+      selling_price: resolvedPrice,
       stock: product.stock ?? 50,
       brand: product.brand || "Bro Code",
       weight: product.weight || '50g',
@@ -152,10 +159,19 @@ export const AdminProductsPage = () => {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+    const val = type === 'checkbox' ? checked : value;
+    setForm((prev) => {
+      const next = {
+        ...prev,
+        [name]: val,
+      };
+      if (name === 'price' || name === 'sellingPrice' || name === 'selling_price') {
+        next.price = val;
+        next.sellingPrice = val;
+        next.selling_price = val;
+      }
+      return next;
+    });
   };
 
   const handleSelectPresetImage = (preset) => {
@@ -305,14 +321,28 @@ export const AdminProductsPage = () => {
         return;
       }
 
+      const rawPrice =
+        form.price !== '' && form.price !== undefined && form.price !== null
+          ? form.price
+          : form.sellingPrice !== '' && form.sellingPrice !== undefined && form.sellingPrice !== null
+          ? form.sellingPrice
+          : form.selling_price;
+      const parsedPrice = parseFloat(rawPrice);
+      const validPrice = !isNaN(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
+      const parsedStock = parseInt(form.stock, 10);
+      const validStock = !isNaN(parsedStock) && parsedStock >= 0 ? parsedStock : 0;
+
       const payload = {
         ...form,
         category: form.category || 'general',
+        description: form.description?.trim() || `${form.name || 'Snack'} - Fresh and delicious midnight hostel treat.`,
         image: finalImageUrl,
         imageUrl: finalImageUrl,
         cloudinaryPublicId: finalCloudinaryPublicId,
-        price: parseFloat(form.price) || 0,
-        stock: parseInt(form.stock, 10) || 0,
+        price: validPrice,
+        sellingPrice: validPrice,
+        selling_price: validPrice,
+        stock: validStock,
         isActive: form.isActive !== false,
         isAvailable: form.isActive !== false,
       };
@@ -463,7 +493,8 @@ export const AdminProductsPage = () => {
                   name="price"
                   value={form.price}
                   onChange={handleChange}
-                  min="1"
+                  min="0"
+                  step="any"
                   required
                   placeholder="e.g. 20"
                   className="w-full bg-white border border-slate-200 focus:border-brand-orange rounded-xl px-3.5 py-2.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none shadow-xs"
@@ -791,8 +822,16 @@ export const AdminProductsPage = () => {
 
               {/* Price & In Stock pill */}
               <div className="flex items-center space-x-3 mb-2">
-                <div className="text-base font-black text-slate-900">
-                  {formatCurrency(form.price || 20)}
+                <div className="text-base font-black text-slate-900" data-testid="product-preview-price">
+                  {formatCurrency(
+                    form.price !== '' && form.price !== undefined && form.price !== null
+                      ? form.price
+                      : form.sellingPrice !== '' && form.sellingPrice !== undefined && form.sellingPrice !== null
+                      ? form.sellingPrice
+                      : form.selling_price !== '' && form.selling_price !== undefined && form.selling_price !== null
+                      ? form.selling_price
+                      : 0
+                  )}
                 </div>
                 <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
                   {form.stock > 0 ? 'In Stock' : 'Out of Stock'}
@@ -903,7 +942,7 @@ export const AdminProductsPage = () => {
                         {p.weight && <span>• {p.weight}</span>}
                       </div>
                       <div className="text-sm font-black text-slate-900 mt-1">
-                        {formatCurrency(p.price)}
+                        {formatCurrency(p.price ?? p.sellingPrice ?? p.selling_price)}
                       </div>
                     </div>
                   </div>
@@ -1048,7 +1087,7 @@ export const AdminProductsPage = () => {
 
                       {/* Price */}
                       <td className="py-3 px-4 font-black text-slate-900">
-                        {formatCurrency(p.price)}
+                        {formatCurrency(p.price ?? p.sellingPrice ?? p.selling_price)}
                       </td>
 
                       {/* Stock */}

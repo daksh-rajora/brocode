@@ -97,7 +97,7 @@ export const SnackCard = ({ snack, onOpenDetails }) => {
           {/* Price */}
           <div>
             <div className="text-base sm:text-lg font-black text-white">
-              {formatCurrency(snack.price)}
+              {formatCurrency(snack.price ?? snack.sellingPrice ?? snack.selling_price)}
             </div>
             {snack.weight && (
               <div className="text-[10px] text-slate-400 font-medium">
