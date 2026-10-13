@@ -23,6 +23,19 @@ const parseBool = (val, defaultVal = true) => {
   return Boolean(val);
 };
 
+const productImageItemSchema = z.union([
+  z.string().min(1, 'Image URL cannot be empty'),
+  z.object({
+    url: z.string().min(1, 'Image URL cannot be empty'),
+    imageUrl: z.string().optional(),
+    image: z.string().optional(),
+    publicId: z.string().nullable().optional(),
+    cloudinaryPublicId: z.string().nullable().optional(),
+    isCover: z.boolean().optional(),
+    order: z.coerce.number().optional(),
+  }),
+]);
+
 export const createProductSchema = z.preprocess(
   (raw) => {
     if (typeof raw !== 'object' || raw === null) return raw;
@@ -46,6 +59,16 @@ export const createProductSchema = z.preprocess(
     image: z.string().optional(),
     imageUrl: z.string().optional(),
     cloudinaryPublicId: z.string().nullable().optional(),
+    images: z.preprocess((val) => {
+      if (typeof val === 'string') {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return [{ url: val, isCover: true, order: 0 }];
+        }
+      }
+      return val;
+    }, z.array(productImageItemSchema).optional()),
     stock: z.coerce.number().int().min(0, 'Stock cannot be negative'),
     isAvailable: z.preprocess((val) => parseBool(val, true), z.boolean()).optional().default(true),
     isActive: z.preprocess((val) => parseBool(val, true), z.boolean()).optional().default(true),
@@ -59,7 +82,7 @@ export const createProductSchema = z.preprocess(
     hostelFavorite: z.preprocess((val) => parseBool(val, false), z.boolean()).optional().default(false),
     rating: z.coerce.number().min(1).max(5).optional().default(4.8),
     reviewCount: z.coerce.number().int().optional().default(120),
-  }).refine((data) => Boolean(data.image || data.imageUrl), {
+  }).refine((data) => Boolean(data.image || data.imageUrl || (Array.isArray(data.images) && data.images.length > 0)), {
     message: 'Product image URL is required',
     path: ['image'],
   })
@@ -89,6 +112,16 @@ export const updateProductSchema = z.preprocess(
     image: z.string().optional(),
     imageUrl: z.string().optional(),
     cloudinaryPublicId: z.string().nullable().optional(),
+    images: z.preprocess((val) => {
+      if (typeof val === 'string') {
+        try {
+          return JSON.parse(val);
+        } catch {
+          return [{ url: val, isCover: true, order: 0 }];
+        }
+      }
+      return val;
+    }, z.array(productImageItemSchema).optional()),
     stock: z.coerce.number().int().min(0).optional(),
     isAvailable: z.preprocess((val) => parseBool(val, undefined), z.boolean().optional()).optional(),
     isActive: z.preprocess((val) => parseBool(val, undefined), z.boolean().optional()).optional(),

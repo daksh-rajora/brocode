@@ -86,17 +86,51 @@ export const OrderSuccessPage = () => {
             </span>
           </div>
 
+          {order?.deliveryFee !== undefined && (
+            <div className="flex items-center justify-between pb-2 border-b border-[#282828]">
+              <span className="text-slate-400">Delivery Fee</span>
+              <span
+                className={`font-semibold ${order.deliveryFee === 0 ? 'text-emerald-400' : 'text-slate-200'}`}
+                data-testid="success-delivery-fee"
+              >
+                {order.deliveryFee === 0 ? 'FREE (₹0)' : formatCurrency(order.deliveryFee)}
+              </span>
+            </div>
+          )}
+
           <div className="flex items-center justify-between pb-2 border-b border-[#282828]">
             <span className="text-slate-400">Total Amount</span>
-            <span className="font-black text-brand-orange text-sm">
+            <span className="font-black text-brand-orange text-sm" data-testid="success-total-amount">
               {formatCurrency(order?.totalAmount ?? 0)}
             </span>
           </div>
 
           <div className="flex items-center justify-between pb-2 border-b border-[#282828]">
             <span className="text-slate-400">Payment Method</span>
-            <span className="font-semibold text-slate-200 capitalize">
-              {(order?.paymentMethod || 'cash_on_delivery').replace(/_/g, ' ')}
+            <span className="font-semibold text-slate-200 capitalize" data-testid="success-payment-method">
+              {order?.paymentMethod === 'upi' || order?.paymentMethod === 'upi_on_delivery'
+                ? 'UPI'
+                : 'Cash on Delivery'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between pb-2 border-b border-[#282828]">
+            <span className="text-slate-400">Payment Status</span>
+            <span
+              className={`font-bold text-xs ${
+                order?.paymentStatus === 'pending_verification'
+                  ? 'text-amber-400'
+                  : order?.paymentStatus === 'paid'
+                  ? 'text-emerald-400'
+                  : 'text-slate-300'
+              }`}
+              data-testid="success-payment-status"
+            >
+              {order?.paymentStatus === 'pending_verification'
+                ? 'Pending Verification'
+                : order?.paymentStatus === 'paid'
+                ? 'Paid'
+                : 'Pending'}
             </span>
           </div>
 
@@ -110,12 +144,25 @@ export const OrderSuccessPage = () => {
           )}
 
           <div className="flex items-center justify-between pt-1">
-            <span className="text-slate-400">Status</span>
+            <span className="text-slate-400">Order Status</span>
             <span className="inline-block px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-extrabold text-[10px] border border-amber-500/30 uppercase">
               {order?.status ? order.status.replace(/_/g, ' ') : 'Placed'}
             </span>
           </div>
         </div>
+
+        {/* UPI Pending Verification Notification Box */}
+        {(order?.paymentMethod === 'upi' || order?.paymentMethod === 'upi_on_delivery') &&
+          order?.paymentStatus === 'pending_verification' && (
+            <div className="mt-4 p-3 bg-amber-950/40 border border-amber-800/60 rounded-2xl text-left text-xs text-amber-200 space-y-1">
+              <div className="font-bold flex items-center space-x-1.5 text-brand-orange text-xs">
+                <span>⚠️ UPI Payment Awaiting Verification</span>
+              </div>
+              <p className="text-[11px] text-amber-300/80 leading-normal">
+                Thank you for your payment! Our team will verify your UPI transaction before dispatching your snacks to your room.
+              </p>
+            </div>
+          )}
 
 
         {/* Action Buttons matching Screenshot 7 */}

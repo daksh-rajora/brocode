@@ -175,4 +175,139 @@ describe('Cloudinary & Product Endpoints Suite', () => {
       expect(checkRes.status).toBe(404);
     });
   });
+
+  describe('Multiple Product Images Management & Gallery Suite', () => {
+    let multiProdId = '';
+    const img1 = {
+      url: 'https://res.cloudinary.com/test-cloud/image/upload/v111/brocode/products/chips_front.jpg',
+      publicId: 'brocode/products/chips_front',
+      isCover: true,
+      order: 0,
+    };
+    const img2 = {
+      url: 'https://res.cloudinary.com/test-cloud/image/upload/v222/brocode/products/chips_back.jpg',
+      publicId: 'brocode/products/chips_back',
+      isCover: false,
+      order: 1,
+    };
+    const img3 = {
+      url: 'https://res.cloudinary.com/test-cloud/image/upload/v333/brocode/products/chips_nutrition.jpg',
+      publicId: 'brocode/products/chips_nutrition',
+      isCover: false,
+      order: 2,
+    };
+
+    it('should create product with multiple ordered images and sync primary cover image', async () => {
+      const res = await request(app)
+        .post('/api/v1/admin/products')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: 'Multi-Image Nachos Platter',
+          description: 'Spicy salsa nachos with cheese dip and jalapenos',
+          price: 75,
+          category: 'chips',
+          stock: 20,
+          images: [img1, img2],
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(Array.isArray(res.body.data.images)).toBe(true);
+      expect(res.body.data.images.length).toBe(2);
+
+      // Verify images are stored with correct metadata
+      expect(res.body.data.images[0].url).toBe(img1.url);
+      expect(res.body.data.images[0].isCover).toBe(true);
+      expect(res.body.data.images[1].url).toBe(img2.url);
+
+      // Verify backward compatibility sync: image and imageUrl point to cover image
+      expect(res.body.data.image).toBe(img1.url);
+      expect(res.body.data.imageUrl).toBe(img1.url);
+      expect(res.body.data.cloudinaryPublicId).toBe(img1.publicId);
+
+      multiProdId = res.body.data._id;
+    });
+
+    it('should update product: add more images, reorder, and set a new cover image', async () => {
+      // Reorder and make img3 the new cover
+      const updatedImages = [
+        { ...img3, isCover: true, order: 0 },
+        { ...img1, isCover: false, order: 1 },
+        { ...img2, isCover: false, order: 2 },
+      ];
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/products/${multiProdId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          images: updatedImages,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.images.length).toBe(3);
+
+      // Verify new cover is img3
+      const cover = res.body.data.images.find((i) => i.isCover);
+      expect(cover).toBeDefined();
+      expect(cover.url).toBe(img3.url);
+
+      // Verify backward compatible sync fields point to img3
+      expect(res.body.data.image).toBe(img3.url);
+      expect(res.body.data.imageUrl).toBe(img3.url);
+      expect(res.body.data.cloudinaryPublicId).toBe(img3.publicId);
+    });
+
+    it('should remove an image and preserve remaining images in order', async () => {
+      // Remove img2
+      const remainingImages = [
+        { ...img3, isCover: true, order: 0 },
+        { ...img1, isCover: false, order: 1 },
+      ];
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/products/${multiProdId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          images: remainingImages,
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.images.length).toBe(2);
+      expect(res.body.data.images.some((i) => i.url === img2.url)).toBe(false);
+    });
+
+    it('should normalize old products with single image into images array for backward compatibility', async () => {
+      // Create a legacy product with single imageUrl only
+      const legacyProd = await Product.create({
+        name: 'Legacy Single Image Wafer',
+        description: 'Classic salted wafer single image',
+        price: 30,
+        stock: 12,
+        category: 'chips',
+        image: 'https://res.cloudinary.com/test-cloud/image/upload/v999/brocode/products/legacy_wafer.jpg',
+        cloudinaryPublicId: 'brocode/products/legacy_wafer',
+      });
+
+      const res = await request(app).get(`/api/v1/products/${legacyProd._id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.imageUrl).toBe(legacyProd.image);
+      expect(Array.isArray(res.body.data.images)).toBe(true);
+      expect(res.body.data.images.length).toBe(1);
+      expect(res.body.data.images[0].url).toBe(legacyProd.image);
+      expect(res.body.data.images[0].isCover).toBe(true);
+      expect(res.body.data.images[0].order).toBe(0);
+
+      await Product.findByIdAndDelete(legacyProd._id);
+    });
+
+    it('DELETE /api/v1/admin/products/:id cleanly removes multi-image product', async () => {
+      const res = await request(app)
+        .delete(`/api/v1/admin/products/${multiProdId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
 });

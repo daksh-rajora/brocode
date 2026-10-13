@@ -12,10 +12,13 @@ import {
   Upload,
   Image as ImageIcon,
   ArrowLeft,
+  ArrowRight,
   RefreshCw,
   AlertCircle,
   Loader2,
   Check,
+  Star,
+  GripVertical,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiService } from '../../services/api';
@@ -64,14 +67,17 @@ export const AdminProductsPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [selectedIds, setSelectedIds] = useState([]);
 
-  // Cloudinary image upload states
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState('');
+  // Multi-image state
+  const [imageList, setImageList] = useState([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const [replacingId, setReplacingId] = useState(null);
+  const [directUrlInput, setDirectUrlInput] = useState('');
   const fileInputRef = useRef(null);
+  const replaceInputRef = useRef(null);
 
   useAdminSocket();
 
@@ -109,28 +115,68 @@ export const AdminProductsPage = () => {
       price: '',
       sellingPrice: '',
       selling_price: '',
-      stock: '',
+      stock: 25,
       brand: '',
       weight: '',
       description: '',
-      image: '',
-      imageUrl: '',
+      image: '/packs/lays.jpg',
+      imageUrl: '/packs/lays.jpg',
       cloudinaryPublicId: null,
       isActive: true,
       isAvailable: true,
     });
-    setSelectedFile(null);
-    setPreviewUrl('');
+    setImageList([
+      {
+        id: 'default-pack',
+        file: null,
+        url: '/packs/lays.jpg',
+        publicId: null,
+        isCover: true,
+        order: 0,
+      },
+    ]);
     setUploadProgress(0);
     setIsUploading(false);
     setUploadError(null);
+    setDirectUrlInput('');
     setViewMode('form');
   };
 
   const handleOpenEdit = (product) => {
     setEditingId(product._id);
-    const existingImg = product.imageUrl || product.image || '';
     const resolvedPrice = product.price ?? product.sellingPrice ?? product.selling_price ?? 20;
+
+    let initialImages = [];
+    if (Array.isArray(product.images) && product.images.length > 0) {
+      initialImages = product.images.map((img, idx) => ({
+        id: img._id || `img-${idx}-${Date.now()}`,
+        file: null,
+        url: img.url || img.imageUrl || img.image,
+        publicId: img.publicId || img.cloudinaryPublicId || null,
+        isCover: Boolean(img.isCover),
+        order: img.order !== undefined && !isNaN(Number(img.order)) ? Number(img.order) : idx,
+      }));
+      initialImages.sort((a, b) => (Number(a.order ?? 0)) - (Number(b.order ?? 0)));
+    } else if (product.imageUrl || product.image) {
+      initialImages = [
+        {
+          id: `img-0-${Date.now()}`,
+          file: null,
+          url: product.imageUrl || product.image,
+          publicId: product.cloudinaryPublicId || null,
+          isCover: true,
+          order: 0,
+        },
+      ];
+    }
+
+    if (initialImages.length > 0 && !initialImages.some((i) => i.isCover)) {
+      initialImages[0].isCover = true;
+    }
+
+    const coverItem = initialImages.find((i) => i.isCover) || initialImages[0];
+    const coverUrl = coverItem?.url || '';
+
     setForm({
       name: product.name || '',
       category: product.category || 'general',
@@ -138,22 +184,22 @@ export const AdminProductsPage = () => {
       sellingPrice: resolvedPrice,
       selling_price: resolvedPrice,
       stock: product.stock ?? 50,
-      brand: product.brand || "Bro Code",
+      brand: product.brand || 'Bro Code',
       weight: product.weight || '50g',
       description: product.description || '',
-      image: existingImg,
-      imageUrl: existingImg,
-      cloudinaryPublicId: product.cloudinaryPublicId || null,
+      image: coverUrl,
+      imageUrl: coverUrl,
+      cloudinaryPublicId: coverItem?.publicId || null,
       isAvailable: product.isAvailable ?? product.isActive ?? true,
       isActive: product.isActive ?? product.isAvailable ?? true,
       isVeg: product.isVeg ?? true,
       hostelFavorite: product.hostelFavorite ?? false,
     });
-    setSelectedFile(null);
-    setPreviewUrl(existingImg);
+    setImageList(initialImages);
     setUploadProgress(0);
     setIsUploading(false);
     setUploadError(null);
+    setDirectUrlInput('');
     setViewMode('form');
   };
 
@@ -174,53 +220,163 @@ export const AdminProductsPage = () => {
     });
   };
 
-  const handleSelectPresetImage = (preset) => {
-    setSelectedFile(null);
-    setPreviewUrl(preset.url);
+  const validateAndAddFiles = (files) => {
     setUploadError(null);
-    setForm((prev) => ({
-      ...prev,
-      image: preset.url,
-      imageUrl: preset.url,
-      cloudinaryPublicId: null,
-      brand: prev.brand || preset.brand,
-      weight: prev.weight || preset.weight,
-      category: prev.category === 'chips' ? preset.category : prev.category,
-    }));
+    if (!files || files.length === 0) return;
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    const maxSize = 5 * 1024 * 1024; // 5 MB
+
+    const validFiles = [];
+    const errors = [];
+
+    Array.from(files).forEach((file) => {
+      if (!validTypes.includes(file.type.toLowerCase())) {
+        errors.push(`"${file.name}" is not a supported format (JPEG, PNG, WebP only).`);
+      } else if (file.size > maxSize) {
+        errors.push(
+          `"${file.name}" exceeds 5 MB limit (${(file.size / (1024 * 1024)).toFixed(1)} MB).`
+        );
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    if (errors.length > 0) {
+      const errorText = errors.join(' ');
+      setUploadError(errorText);
+      toast.error(errorText);
+    }
+
+    if (validFiles.length > 0) {
+      const newItems = validFiles.map((file, idx) => ({
+        id: `file-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        file,
+        url: URL.createObjectURL(file),
+        publicId: null,
+        isCover: false,
+        order: imageList.length + idx,
+      }));
+
+      setImageList((prev) => {
+        const combined = [...prev, ...newItems];
+        if (!combined.some((i) => i.isCover) && combined.length > 0) {
+          combined[0].isCover = true;
+        }
+        return combined.map((item, index) => ({ ...item, order: index }));
+      });
+      toast.success(
+        validFiles.length > 1
+          ? `Added ${validFiles.length} images`
+          : `Added "${validFiles[0].name}"`
+      );
+    }
   };
 
-  const validateAndSelectFile = (file) => {
-    setUploadError(null);
-    if (!file) return;
+  const handleFileInputChange = (e) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      validateAndAddFiles(files);
+    }
+    e.target.value = '';
+  };
+
+  const handleTriggerReplace = (id) => {
+    setReplacingId(id);
+    replaceInputRef.current?.click();
+  };
+
+  const handleReplaceFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !replacingId) return;
 
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     if (!validTypes.includes(file.type.toLowerCase())) {
       const err = 'Invalid file format. Only JPEG, PNG, and WebP images are allowed.';
       setUploadError(err);
       toast.error(err);
+      e.target.value = '';
       return;
     }
 
-    const maxSize = 5 * 1024 * 1024; // 5 MB
-    if (file.size > maxSize) {
-      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-      const err = `File is too large (${sizeMb} MB). Maximum allowed size is 5 MB.`;
+    if (file.size > 5 * 1024 * 1024) {
+      const err = `File is too large (${(file.size / (1024 * 1024)).toFixed(1)} MB). Maximum allowed size is 5 MB.`;
       setUploadError(err);
       toast.error(err);
+      e.target.value = '';
       return;
     }
 
-    setSelectedFile(file);
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
+    setImageList((prev) =>
+      prev.map((item) =>
+        item.id === replacingId
+          ? {
+              ...item,
+              file,
+              url: URL.createObjectURL(file),
+              publicId: null,
+            }
+          : item
+      )
+    );
+    toast.success('Image replaced');
+    setReplacingId(null);
+    e.target.value = '';
   };
 
-  const handleFileInputChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      validateAndSelectFile(file);
-    }
-    e.target.value = '';
+  const handleSetCover = (targetId) => {
+    setImageList((prev) =>
+      prev.map((item) => ({
+        ...item,
+        isCover: item.id === targetId,
+      }))
+    );
+    toast.success('Cover image updated');
+  };
+
+  const handleRemoveImage = (targetId) => {
+    setImageList((prev) => {
+      const remaining = prev.filter((item) => item.id !== targetId);
+      if (remaining.length > 0 && !remaining.some((i) => i.isCover)) {
+        remaining[0].isCover = true;
+      }
+      return remaining.map((item, index) => ({ ...item, order: index }));
+    });
+  };
+
+  const handleMoveImage = (index, direction) => {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= imageList.length) return;
+
+    setImageList((prev) => {
+      const copy = [...prev];
+      const [moved] = copy.splice(index, 1);
+      copy.splice(newIndex, 0, moved);
+      return copy.map((item, idx) => ({ ...item, order: idx }));
+    });
+  };
+
+  const handleThumbDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleThumbDragOver = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleThumbDrop = (e, targetIndex) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === targetIndex) return;
+
+    setImageList((prev) => {
+      const copy = [...prev];
+      const [moved] = copy.splice(draggedIndex, 1);
+      copy.splice(targetIndex, 0, moved);
+      return copy.map((item, idx) => ({ ...item, order: idx }));
+    });
+    setDraggedIndex(null);
   };
 
   const handleDragOver = (e) => {
@@ -239,23 +395,55 @@ export const AdminProductsPage = () => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      validateAndSelectFile(file);
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      validateAndAddFiles(files);
     }
   };
 
-  const handleRemoveImage = () => {
-    setSelectedFile(null);
-    setPreviewUrl('');
-    setUploadError(null);
-    setUploadProgress(0);
+  const handleSelectPresetImage = (preset) => {
+    const newImg = {
+      id: `preset-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      file: null,
+      url: preset.url,
+      publicId: null,
+      isCover: imageList.length === 0,
+      order: imageList.length,
+    };
+    setImageList((prev) => {
+      const nextList = [...prev, newImg];
+      if (!nextList.some((i) => i.isCover) && nextList.length > 0) {
+        nextList[0].isCover = true;
+      }
+      return nextList.map((item, idx) => ({ ...item, order: idx }));
+    });
     setForm((prev) => ({
       ...prev,
-      image: '',
-      imageUrl: '',
-      cloudinaryPublicId: null,
+      brand: prev.brand || preset.brand,
+      weight: prev.weight || preset.weight,
+      category: prev.category === 'chips' ? preset.category : prev.category,
     }));
+    toast.success(`Added ${preset.label} image`);
+  };
+
+  const handleAddDirectUrl = () => {
+    if (!directUrlInput.trim()) return;
+    const newImg = {
+      id: `url-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      file: null,
+      url: directUrlInput.trim(),
+      publicId: null,
+      isCover: imageList.length === 0,
+      order: imageList.length,
+    };
+    setImageList((prev) => {
+      const nextList = [...prev, newImg];
+      if (!nextList.some((i) => i.isCover) && nextList.length > 0) {
+        nextList[0].isCover = true;
+      }
+      return nextList.map((item, idx) => ({ ...item, order: idx }));
+    });
+    setDirectUrlInput('');
   };
 
   const handleSubmit = async (e) => {
@@ -265,8 +453,8 @@ export const AdminProductsPage = () => {
       return;
     }
 
-    if (!selectedFile && !previewUrl && !form.image && !form.imageUrl) {
-      const err = 'Please upload or select an image for this snack.';
+    if (imageList.length === 0) {
+      const err = 'Please upload at least one image for this snack.';
       setUploadError(err);
       toast.error(err);
       return;
@@ -276,16 +464,15 @@ export const AdminProductsPage = () => {
       setSubmitting(true);
       setUploadError(null);
 
-      let finalImageUrl = form.imageUrl || form.image;
-      let finalCloudinaryPublicId = form.cloudinaryPublicId || null;
+      let workingList = [...imageList];
+      const filesToUpload = workingList.filter((item) => Boolean(item.file));
 
-      // 1. Upload file to Cloudinary if new file is selected
-      if (selectedFile) {
+      if (filesToUpload.length > 0) {
         setIsUploading(true);
         setUploadProgress(15);
-
         try {
-          const uploadRes = await apiService.uploadProductImage(selectedFile, (progressEvent) => {
+          const fileObjects = filesToUpload.map((i) => i.file);
+          const uploadRes = await apiService.uploadProductImages(fileObjects, (progressEvent) => {
             if (progressEvent.total) {
               const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
               setUploadProgress(Math.min(95, percent));
@@ -293,33 +480,61 @@ export const AdminProductsPage = () => {
           });
 
           setUploadProgress(100);
-          finalImageUrl = uploadRes.data?.imageUrl || uploadRes.data?.secure_url;
-          finalCloudinaryPublicId = uploadRes.data?.cloudinaryPublicId || uploadRes.data?.public_id || null;
+          const uploadedResults = uploadRes.data?.images || [
+            {
+              url: uploadRes.data?.imageUrl || uploadRes.data?.secure_url,
+              publicId: uploadRes.data?.cloudinaryPublicId || uploadRes.data?.public_id,
+            },
+          ];
 
-          if (!finalImageUrl) {
-            throw new Error('Cloudinary response did not return a valid secure URL');
-          }
+          let uploadIdx = 0;
+          workingList = workingList.map((item) => {
+            if (item.file) {
+              const res = uploadedResults[uploadIdx++];
+              return {
+                ...item,
+                file: null,
+                url: res?.url || res?.secure_url || item.url,
+                publicId: res?.publicId || res?.cloudinaryPublicId || null,
+              };
+            }
+            return item;
+          });
         } catch (uploadErr) {
           const errMsg =
             uploadErr.message ||
-            'Failed to upload image to Cloudinary. Please check your credentials in server/.env.';
+            'Failed to upload image(s) to Cloudinary. Please check your network and configuration.';
           setUploadError(errMsg);
           toast.error(errMsg);
           setIsUploading(false);
           setSubmitting(false);
-          return; // Strictly abort saving product if image upload fails
+          return;
         }
       }
 
-      // Safeguard: Never save browser blob URLs
-      if (finalImageUrl && finalImageUrl.startsWith('blob:')) {
-        const err = 'Temporary local blob cannot be saved. Please upload the image to Cloudinary.';
+      // Safeguard: Do not save temporary blob URLs
+      const hasBlob = workingList.some((img) => img.url && img.url.startsWith('blob:'));
+      if (hasBlob) {
+        const err = 'Temporary local image could not be processed. Please retry upload.';
         setUploadError(err);
         toast.error(err);
         setSubmitting(false);
         setIsUploading(false);
         return;
       }
+
+      // Ensure cover exists
+      if (!workingList.some((i) => i.isCover) && workingList.length > 0) {
+        workingList[0].isCover = true;
+      }
+
+      const coverItem = workingList.find((i) => i.isCover) || workingList[0];
+      const finalImages = workingList.map((item, idx) => ({
+        url: item.url,
+        publicId: item.publicId || null,
+        isCover: item.id === coverItem.id,
+        order: idx,
+      }));
 
       const rawPrice =
         form.price !== '' && form.price !== undefined && form.price !== null
@@ -335,16 +550,19 @@ export const AdminProductsPage = () => {
       const payload = {
         ...form,
         category: form.category || 'general',
-        description: form.description?.trim() || `${form.name || 'Snack'} - Fresh and delicious midnight hostel treat.`,
-        image: finalImageUrl,
-        imageUrl: finalImageUrl,
-        cloudinaryPublicId: finalCloudinaryPublicId,
+        description:
+          form.description?.trim() ||
+          `${form.name || 'Snack'} - Fresh and delicious midnight hostel treat.`,
+        images: finalImages,
+        image: coverItem.url,
+        imageUrl: coverItem.url,
+        cloudinaryPublicId: coverItem.publicId || null,
         price: validPrice,
         sellingPrice: validPrice,
         selling_price: validPrice,
         stock: validStock,
         isActive: form.isActive !== false,
-        isAvailable: form.isActive !== false,
+        isAvailable: form.isActive !== false && validStock > 0,
       };
 
       if (editingId) {
@@ -352,15 +570,20 @@ export const AdminProductsPage = () => {
         toast.success('Product updated successfully!');
       } else {
         await apiService.createProduct(payload);
-        toast.success('Product created with Cloudinary image!');
+        toast.success('Product created successfully!');
       }
 
-      setSelectedFile(null);
-      setPreviewUrl('');
+      setImageList([]);
+      setSearchParams({}, { replace: true });
       setViewMode('list');
-      loadProducts();
+      await loadProducts();
     } catch (error) {
-      toast.error(error.message || 'Failed to save product');
+      const detailedMsg =
+        Array.isArray(error.errors) && error.errors.length > 0
+          ? error.errors.map((err) => `${err.field ? `${err.field}: ` : ''}${err.message}`).join(', ')
+          : error.message || 'Failed to save product';
+      console.error('[AdminProducts] Save product error:', error);
+      toast.error(detailedMsg);
     } finally {
       setSubmitting(false);
       setIsUploading(false);
@@ -436,7 +659,10 @@ export const AdminProductsPage = () => {
           </div>
 
           <button
-            onClick={() => setViewMode('list')}
+            onClick={() => {
+              setSearchParams({}, { replace: true });
+              setViewMode('list');
+            }}
             className="flex items-center space-x-1 px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-xs font-bold text-slate-600 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -576,107 +802,218 @@ export const AdminProductsPage = () => {
               />
             </div>
 
-            {/* Row 5: Product Images upload / preset picker */}
-            <div className="space-y-2">
+            {/* Row 5: Multi-Product Images uploader */}
+            <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-slate-700">
-                  Product Image *
-                </label>
-                <span className="text-[10px] text-slate-400 font-semibold">
-                  PNG, JPEG, WebP • Max 5MB
-                </span>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700">
+                    Product Images *
+                  </label>
+                  <p className="text-[10px] text-slate-400">
+                    Add multiple angles, packaging shots, and ingredient details. Drag to reorder.
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span
+                    data-testid="admin-image-count-badge"
+                    className="text-[10px] text-slate-500 font-bold bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200"
+                  >
+                    {imageList.length} {imageList.length === 1 ? 'image' : 'images'}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-semibold hidden sm:inline">
+                    PNG, JPEG, WebP • Max 5MB
+                  </span>
+                </div>
               </div>
 
-              {/* Hidden file input */}
+              {/* Hidden file inputs */}
               <input
                 ref={fileInputRef}
                 type="file"
+                multiple
                 accept="image/jpeg,image/png,image/webp,image/jpg"
                 className="hidden"
                 onChange={handleFileInputChange}
               />
+              <input
+                ref={replaceInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/jpg"
+                className="hidden"
+                onChange={handleReplaceFileChange}
+              />
 
-              {/* Upload or Selected Preview Zone */}
+              {/* Main Images Management Area */}
               <div className="space-y-3">
-                {previewUrl || form.imageUrl || form.image ? (
-                  <div className="bg-slate-50/80 rounded-2xl border border-slate-200 p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
-                    {/* Thumbnail & Info */}
-                    <div className="flex items-center space-x-3 w-full sm:w-auto">
-                      <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-xl border-2 border-brand-orange bg-white p-2 relative flex items-center justify-center shrink-0 shadow-xs">
-                        <img
-                          src={previewUrl || form.imageUrl || form.image}
-                          alt="Snack Preview"
-                          className="max-h-full max-w-full object-contain"
-                        />
-                        <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-brand-orange text-black flex items-center justify-center shadow-xs">
-                          <Check className="w-3 h-3 text-white stroke-[3]" />
-                        </div>
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-bold text-slate-900 truncate">
-                          {selectedFile ? selectedFile.name : 'Image Ready'}
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">
-                          {selectedFile
-                            ? `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB • Selected from computer`
-                            : form.cloudinaryPublicId
-                            ? 'Cloudinary hosted image'
-                            : 'Standard image URL'}
-                        </div>
-                        {form.cloudinaryPublicId && (
-                          <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold text-[9px] border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                            Cloudinary ID: {form.cloudinaryPublicId}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Action buttons: Replace & Remove */}
-                    <div className="flex items-center space-x-2 w-full sm:w-auto justify-end shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={submitting || isUploading}
-                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-slate-200 hover:border-brand-orange bg-white text-slate-700 hover:text-brand-orange text-xs font-bold transition-all disabled:opacity-50"
-                      >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        <span>Replace</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleRemoveImage}
-                        disabled={submitting || isUploading}
-                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border border-rose-200 hover:bg-rose-50 text-rose-600 text-xs font-bold transition-all disabled:opacity-50"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        <span>Remove</span>
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* Click to upload & Drag and Drop zone */
+                {imageList.length === 0 ? (
+                  /* Empty state dropzone */
                   <div
+                    data-testid="image-dropzone"
                     onClick={() => fileInputRef.current?.click()}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
-                    className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
+                    className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all flex flex-col items-center justify-center ${
                       isDragging
-                        ? 'border-brand-orange bg-amber-50/30 scale-[1.01]'
-                        : 'border-slate-200 hover:border-brand-orange bg-slate-50/50 hover:bg-amber-50/10'
+                        ? 'border-brand-orange bg-amber-50/40 scale-[1.01]'
+                        : 'border-slate-300 hover:border-brand-orange bg-slate-50/60 hover:bg-amber-50/15'
                     }`}
                   >
-                    <div className="w-10 h-10 rounded-full bg-amber-100/60 text-brand-orange flex items-center justify-center mb-2">
-                      <Upload className="w-5 h-5 stroke-[2.5]" />
+                    <div className="w-12 h-12 rounded-full bg-amber-100/70 text-brand-orange flex items-center justify-center mb-2.5 shadow-xs">
+                      <Upload className="w-6 h-6 stroke-[2.5]" />
                     </div>
                     <span className="text-xs font-bold text-slate-800">
-                      Click to upload snack image, or drag and drop
+                      Click to upload snack images, or drag & drop multiple files
                     </span>
                     <span className="text-[11px] text-slate-400 mt-1">
-                      JPEG, PNG, or WebP up to 5 MB
+                      Select multiple JPEG, PNG, or WebP images up to 5 MB each
                     </span>
+                  </div>
+                ) : (
+                  /* Grid of uploaded/selected images */
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between pb-1">
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        Drag thumbnails to reorder • Mark one as primary cover image
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="add-more-images-btn"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={submitting || isUploading}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-xl bg-amber-500/10 hover:bg-brand-orange/20 text-brand-orange text-xs font-bold transition-all disabled:opacity-50 border border-brand-orange/30"
+                      >
+                        <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                        <span>Add More Images</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {imageList.map((imgItem, idx) => (
+                        <div
+                          key={imgItem.id}
+                          draggable
+                          onDragStart={(e) => handleThumbDragStart(e, idx)}
+                          onDragOver={(e) => handleThumbDragOver(e, idx)}
+                          onDrop={(e) => handleThumbDrop(e, idx)}
+                          className={`group relative rounded-2xl bg-white border-2 p-2.5 flex flex-col justify-between transition-all select-none shadow-xs cursor-grab active:cursor-grabbing ${
+                            imgItem.isCover
+                              ? 'border-brand-orange ring-2 ring-brand-orange/30 shadow-md'
+                              : 'border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {/* Top row: Cover badge & Order / Drag handle */}
+                          <div className="flex items-center justify-between gap-1 mb-1.5">
+                            {imgItem.isCover ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-brand-orange text-black font-black text-[9px] shadow-xs">
+                                <Star className="w-2.5 h-2.5 fill-current" />
+                                Cover
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                data-testid={`set-cover-btn-${idx}`}
+                                onClick={() => handleSetCover(imgItem.id)}
+                                className="text-[9px] font-bold text-slate-500 hover:text-brand-orange hover:underline transition-colors"
+                              >
+                                Set as Cover
+                              </button>
+                            )}
+
+                            <div className="flex items-center space-x-1">
+                              <span className="text-[9px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md">
+                                #{idx + 1}
+                              </span>
+                              <GripVertical className="w-3.5 h-3.5 text-slate-400" />
+                            </div>
+                          </div>
+
+                          {/* Thumbnail preview image */}
+                          <div className="w-full aspect-square rounded-xl bg-slate-50/80 p-2 flex items-center justify-center mb-2 overflow-hidden">
+                            <img
+                              src={imgItem.url}
+                              alt={`Product image ${idx + 1}`}
+                              className="max-h-full max-w-full object-contain"
+                              onError={(e) => {
+                                e.target.src =
+                                  'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80';
+                              }}
+                            />
+                          </div>
+
+                          {/* Control buttons toolbar */}
+                          <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between gap-1">
+                            {/* Reorder Left */}
+                            <button
+                              type="button"
+                              data-testid={`move-image-left-${idx}`}
+                              disabled={idx === 0 || submitting || isUploading}
+                              onClick={() => handleMoveImage(idx, -1)}
+                              title="Move Left"
+                              className="p-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
+                            >
+                              <ArrowLeft className="w-3 h-3" />
+                            </button>
+
+                            {/* Reorder Right */}
+                            <button
+                              type="button"
+                              data-testid={`move-image-right-${idx}`}
+                              disabled={idx === imageList.length - 1 || submitting || isUploading}
+                              onClick={() => handleMoveImage(idx, 1)}
+                              title="Move Right"
+                              className="p-1 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-600 disabled:opacity-20 disabled:hover:bg-transparent transition-colors"
+                            >
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
+
+                            {/* Replace */}
+                            <button
+                              type="button"
+                              data-testid={`replace-image-btn-${idx}`}
+                              disabled={submitting || isUploading}
+                              onClick={() => handleTriggerReplace(imgItem.id)}
+                              title="Replace Image"
+                              className="p-1 rounded-lg border border-slate-200 hover:border-brand-orange text-slate-600 hover:text-brand-orange transition-colors"
+                            >
+                              <RefreshCw className="w-3 h-3" />
+                            </button>
+
+                            {/* Remove */}
+                            <button
+                              type="button"
+                              data-testid={`remove-image-btn-${idx}`}
+                              disabled={submitting || isUploading}
+                              onClick={() => handleRemoveImage(imgItem.id)}
+                              title="Remove Image"
+                              className="p-1 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 transition-colors"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Add more drop tile */}
+                      <div
+                        data-testid="add-more-tile"
+                        onClick={() => fileInputRef.current?.click()}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        className={`aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center p-3 text-center cursor-pointer transition-all ${
+                          isDragging
+                            ? 'border-brand-orange bg-amber-50/40'
+                            : 'border-slate-300 hover:border-brand-orange bg-slate-50/50 hover:bg-amber-50/20'
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-full bg-amber-100 text-brand-orange flex items-center justify-center mb-1">
+                          <Plus className="w-4 h-4 stroke-[3]" />
+                        </div>
+                        <span className="text-[11px] font-bold text-slate-700">Add More</span>
+                        <span className="text-[9px] text-slate-400">or drop here</span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -686,7 +1023,7 @@ export const AdminProductsPage = () => {
                     <div className="flex items-center justify-between text-[11px] font-bold text-slate-800">
                       <span className="inline-flex items-center gap-1.5">
                         <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-orange" />
-                        Uploading image to Cloudinary...
+                        Uploading image(s) to Cloudinary...
                       </span>
                       <span className="font-black text-brand-orange">{uploadProgress}%</span>
                     </div>
@@ -713,7 +1050,7 @@ export const AdminProductsPage = () => {
                 {/* Quick Presets Carousel */}
                 <div className="pt-2">
                   <span className="text-[10px] text-slate-500 font-bold block mb-1.5">
-                    Or select a common quick snack pack preset:
+                    Or click to append a quick snack pack preset:
                   </span>
                   <div className="flex items-center space-x-2 overflow-x-auto pb-1">
                     {PRESET_PACK_IMAGES.map((preset, idx) => (
@@ -721,12 +1058,8 @@ export const AdminProductsPage = () => {
                         key={idx}
                         type="button"
                         onClick={() => handleSelectPresetImage(preset)}
-                        className={`w-12 h-12 rounded-xl border p-1 bg-white hover:border-brand-orange transition-all shrink-0 ${
-                          form.image === preset.url
-                            ? 'border-brand-orange ring-2 ring-brand-orange/30'
-                            : 'border-slate-200'
-                        }`}
-                        title={preset.label}
+                        className="w-12 h-12 rounded-xl border border-slate-200 p-1 bg-white hover:border-brand-orange transition-all shrink-0 hover:scale-105"
+                        title={`Add ${preset.label}`}
                       >
                         <img
                           src={preset.url}
@@ -738,19 +1071,30 @@ export const AdminProductsPage = () => {
                   </div>
                 </div>
 
-                {/* Direct image url input fallback */}
-                <div>
+                {/* Direct image URL input field */}
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
-                    name="image"
-                    value={form.image}
-                    onChange={(e) => {
-                      handleChange(e);
-                      setPreviewUrl(e.target.value);
+                    value={directUrlInput}
+                    onChange={(e) => setDirectUrlInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddDirectUrl();
+                      }
                     }}
                     placeholder="Or paste direct image URL (https://...)"
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-brand-orange rounded-xl px-3 py-1.5 text-[11px] text-slate-700 placeholder-slate-400 focus:outline-none"
+                    className="flex-1 bg-slate-50 border border-slate-200 focus:border-brand-orange rounded-xl px-3 py-1.5 text-[11px] text-slate-700 placeholder-slate-400 focus:outline-none"
                   />
+                  <button
+                    type="button"
+                    data-testid="add-image-url-btn"
+                    onClick={handleAddDirectUrl}
+                    disabled={!directUrlInput.trim()}
+                    className="px-3 py-1.5 rounded-xl border border-slate-200 hover:border-brand-orange bg-white text-slate-700 text-[11px] font-bold disabled:opacity-40 transition-colors"
+                  >
+                    Add URL
+                  </button>
                 </div>
               </div>
             </div>
@@ -759,7 +1103,10 @@ export const AdminProductsPage = () => {
             <div className="pt-4 flex items-center justify-end space-x-3">
               <button
                 type="button"
-                onClick={() => setViewMode('list')}
+                onClick={() => {
+                  setSearchParams({}, { replace: true });
+                  setViewMode('list');
+                }}
                 disabled={submitting || isUploading}
                 className="px-6 py-2.5 rounded-xl border border-slate-300 hover:bg-slate-100 text-xs font-bold text-slate-700 transition-colors disabled:opacity-50"
               >
@@ -775,7 +1122,7 @@ export const AdminProductsPage = () => {
                 )}
                 <span>
                   {isUploading
-                    ? 'Uploading Image...'
+                    ? 'Uploading Images...'
                     : submitting
                     ? 'Saving Product...'
                     : editingId
@@ -788,9 +1135,14 @@ export const AdminProductsPage = () => {
 
           {/* Right Col: Product Preview Card matching Middle-Right Mockup */}
           <div className="space-y-3">
-            <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">
-              Product Preview
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-black uppercase text-slate-500 tracking-wider">
+                Product Preview
+              </h3>
+              <span className="text-[10px] font-bold text-brand-orange bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                Cover Image Preview
+              </span>
+            </div>
 
             {/* Card Mockup */}
             <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-sm relative group">
@@ -802,10 +1154,14 @@ export const AdminProductsPage = () => {
                 <Heart className="w-4 h-4" />
               </button>
 
-              {/* Product Image */}
-              <div className="w-full aspect-square rounded-xl bg-slate-50/70 p-4 flex items-center justify-center mb-3">
+              {/* Product Cover Image */}
+              <div className="w-full aspect-square rounded-xl bg-slate-50/70 p-4 flex items-center justify-center mb-3 relative">
                 <img
-                  src={previewUrl || form.imageUrl || form.image || '/packs/lays.jpg'}
+                  src={
+                    (imageList.find((img) => img.isCover)?.url ||
+                      imageList[0]?.url ||
+                      '/packs/lays.jpg')
+                  }
                   alt={form.name || 'Snack'}
                   className="max-h-full max-w-full object-contain"
                   onError={(e) => {
@@ -813,6 +1169,11 @@ export const AdminProductsPage = () => {
                       'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80';
                   }}
                 />
+                {imageList.length > 1 && (
+                  <span className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/60 text-white font-bold text-[9px] backdrop-blur-xs">
+                    {imageList.length} images
+                  </span>
+                )}
               </div>
 
               {/* Title */}
@@ -833,8 +1194,12 @@ export const AdminProductsPage = () => {
                       : 0
                   )}
                 </div>
-                <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
-                  {form.stock > 0 ? 'In Stock' : 'Out of Stock'}
+                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                  Number(form.stock) > 0
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-rose-50 text-rose-700 border-rose-200'
+                }`}>
+                  {Number(form.stock) > 0 ? `In Stock · ${form.stock} available` : 'Unavailable'}
                 </span>
               </div>
 
@@ -924,9 +1289,15 @@ export const AdminProductsPage = () => {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center space-x-3 min-w-0">
-                    <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-200 p-1 flex items-center justify-center shrink-0">
+                    <div className="w-14 h-14 rounded-xl bg-slate-50 border border-slate-200 p-1 flex items-center justify-center shrink-0 relative">
                       <img
-                        src={p.imageUrl || p.image}
+                        src={
+                          (Array.isArray(p.images) &&
+                            (p.images.find((img) => img.isCover)?.url || p.images[0]?.url)) ||
+                          p.imageUrl ||
+                          p.image ||
+                          '/packs/lays.jpg'
+                        }
                         alt={p.name}
                         className="max-h-full max-w-full object-contain"
                         onError={(e) => {
@@ -934,6 +1305,11 @@ export const AdminProductsPage = () => {
                             'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80';
                         }}
                       />
+                      {Array.isArray(p.images) && p.images.length > 1 && (
+                        <span className="absolute -bottom-1 -right-1 px-1.5 py-0.5 bg-black/75 text-white text-[8px] font-bold rounded-full">
+                          {p.images.length}
+                        </span>
+                      )}
                     </div>
                     <div className="min-w-0">
                       <h3 className="font-bold text-slate-900 text-sm line-clamp-1">{p.name}</h3>
@@ -1059,9 +1435,15 @@ export const AdminProductsPage = () => {
 
                       {/* Image Thumbnail matching Mockup */}
                       <td className="py-3 px-3">
-                        <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 p-1 flex items-center justify-center shrink-0">
+                        <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 p-1 flex items-center justify-center shrink-0 relative">
                           <img
-                            src={p.imageUrl || p.image}
+                            src={
+                              (Array.isArray(p.images) &&
+                                (p.images.find((img) => img.isCover)?.url || p.images[0]?.url)) ||
+                              p.imageUrl ||
+                              p.image ||
+                              '/packs/lays.jpg'
+                            }
                             alt={p.name}
                             className="max-h-full max-w-full object-contain"
                             onError={(e) => {
@@ -1069,6 +1451,11 @@ export const AdminProductsPage = () => {
                                 'https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=400&auto=format&fit=crop&q=80';
                             }}
                           />
+                          {Array.isArray(p.images) && p.images.length > 1 && (
+                            <span className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-black/75 text-white text-[8px] font-bold rounded-full">
+                              {p.images.length}
+                            </span>
+                          )}
                         </div>
                       </td>
 

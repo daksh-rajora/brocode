@@ -82,10 +82,20 @@ describe('Bro Code Backend API Suite', () => {
     });
 
     it('should properly calculate pickup fee as 0 and deduct stock', async () => {
-      // Find a real product from database
-      const productsRes = await request(app).get('/api/v1/products');
-      const testProduct = productsRes.body.data?.[0];
-      if (!testProduct) return;
+      // Find an in-stock product from database or create one
+      const productsRes = await request(app).get('/api/v1/products?inStockOnly=true');
+      let testProduct = productsRes.body.data?.find((p) => p.stock >= 5);
+      if (!testProduct) {
+        testProduct = await Product.create({
+          name: 'Pickup Test Snack',
+          description: 'Crunchy snack for pickup testing',
+          price: 50,
+          stock: 20,
+          image: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+          isActive: true,
+          isAvailable: true,
+        });
+      }
 
       const settingsRes = await request(app).get('/api/v1/settings');
       const minAmount = settingsRes.body.data?.minOrderAmount || 0;

@@ -2,6 +2,16 @@ import mongoose from 'mongoose';
 
 const storeSettingSchema = new mongoose.Schema(
   {
+    storeName: {
+      type: String,
+      default: 'Bro Code',
+      trim: true,
+    },
+    tagline: {
+      type: String,
+      default: 'Hostel Ki Bhook, Bro Code Ke Naam!',
+      trim: true,
+    },
     isOpen: {
       type: Boolean,
       default: true,
@@ -12,12 +22,17 @@ const storeSettingSchema = new mongoose.Schema(
     },
     deliveryFee: {
       type: Number,
-      default: 15,
+      default: 10,
+      min: [0, 'Delivery fee cannot be negative'],
+    },
+    freeDeliveryAbove: {
+      type: Number,
+      default: 150,
       min: 0,
     },
     minOrderAmount: {
       type: Number,
-      default: 50,
+      default: 0,
       min: 0,
     },
     announcementBanner: {

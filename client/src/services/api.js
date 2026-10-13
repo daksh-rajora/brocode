@@ -65,6 +65,24 @@ export const apiService = {
       onUploadProgress,
     });
   },
+  uploadProductImages: (filesOrFormData, onUploadProgress) => {
+    let formData = filesOrFormData;
+    if (Array.isArray(filesOrFormData) || filesOrFormData instanceof FileList) {
+      formData = new FormData();
+      Array.from(filesOrFormData).forEach((file) => {
+        formData.append('images', file);
+      });
+    } else if (filesOrFormData instanceof File || filesOrFormData instanceof Blob) {
+      formData = new FormData();
+      formData.append('images', filesOrFormData);
+    }
+    return api.post('/products/upload-image', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress,
+    });
+  },
   createProduct: (data) => api.post('/products', data),
   updateProduct: (id, data) => api.patch(`/products/${id}`, data),
   updateStock: (id, data) => api.patch(`/products/${id}/stock`, data),
@@ -77,6 +95,7 @@ export const apiService = {
   getOrderById: (id) => api.get(`/orders/${id}`),
   getAllOrders: (params) => api.get('/orders/admin/all', { params }),
   updateOrderStatus: (id, data) => api.patch(`/orders/${id}/status`, data),
+  updatePaymentStatus: (id, data) => api.patch(`/orders/${id}/payment-status`, data),
   getDashboardAnalytics: () => api.get('/orders/admin/analytics'),
 
   // Auth

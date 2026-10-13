@@ -100,13 +100,15 @@ const orderSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ['cash_on_delivery', 'upi_on_delivery', 'pay_at_room'],
-      default: 'upi_on_delivery',
+      enum: ['cash_on_delivery', 'upi', 'upi_on_delivery', 'pay_at_room'],
+      default: 'upi',
+      index: true,
     },
     paymentStatus: {
       type: String,
-      enum: ['pending', 'paid', 'failed'],
+      enum: ['pending', 'pending_verification', 'paid', 'failed'],
       default: 'pending',
+      index: true,
     },
     status: {
       type: String,

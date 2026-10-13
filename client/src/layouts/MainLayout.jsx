@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { Navbar } from './Navbar';
 import { Footer } from './Footer';
 import { apiService } from '../services/api';
+import { useSocketEvent } from '../hooks/useSocket';
 
 export const MainLayout = () => {
   const [settings, setSettings] = useState(null);
@@ -16,7 +17,7 @@ export const MainLayout = () => {
       setSettings({
         isOpen: true,
         midnightHours: '10:00 PM - 04:30 AM',
-        deliveryFee: 10,
+        deliveryFee: 0,
         minOrderAmount: 0,
       });
     }
@@ -24,7 +25,15 @@ export const MainLayout = () => {
 
   useEffect(() => {
     fetchSettings();
+    window.addEventListener('focus', fetchSettings);
+    return () => window.removeEventListener('focus', fetchSettings);
   }, []);
+
+  useSocketEvent('settings:updated', (updated) => {
+    if (updated) {
+      setSettings(updated);
+    }
+  });
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0D0D0D] text-slate-100 font-sans selection:bg-brand-orange selection:text-black">

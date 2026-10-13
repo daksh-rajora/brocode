@@ -8,12 +8,15 @@ import {
   Calendar,
   CheckCircle2,
   XCircle,
+  AlertCircle,
+  ShieldCheck,
   Eye,
   Phone,
   MapPin,
   Clock,
   ArrowLeft,
   ShoppingBag,
+  QrCode,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { apiService } from '../../services/api';
@@ -35,8 +38,11 @@ export const AdminOrdersPage = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [search, setSearch] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('all');
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [statusToUpdate, setStatusToUpdate] = useState('preparing');
+  const [paymentStatusToUpdate, setPaymentStatusToUpdate] = useState('paid');
   const [updating, setUpdating] = useState(false);
 
   useAdminSocket();
@@ -82,6 +88,44 @@ export const AdminOrdersPage = () => {
     }
   };
 
+  const handleVerifyPayment = async (orderId) => {
+    try {
+      setUpdating(true);
+      const res = await apiService.updatePaymentStatus(orderId, {
+        paymentStatus: 'paid',
+        note: 'UPI Payment verified by admin',
+      });
+      setOrders((prev) => prev.map((ord) => (ord._id === orderId ? res.data : ord)));
+      if (selectedOrder?._id === orderId) {
+        setSelectedOrder(res.data);
+      }
+      toast.success('UPI Payment verified successfully!');
+    } catch (err) {
+      toast.error(err.message || 'Failed to verify payment');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleUpdatePaymentStatus = async (orderId, newStatus) => {
+    try {
+      setUpdating(true);
+      const res = await apiService.updatePaymentStatus(orderId, {
+        paymentStatus: newStatus,
+        note: `Payment status updated to ${newStatus} by admin`,
+      });
+      setOrders((prev) => prev.map((ord) => (ord._id === orderId ? res.data : ord)));
+      if (selectedOrder?._id === orderId) {
+        setSelectedOrder(res.data);
+      }
+      toast.success(`Payment status updated to ${newStatus}`);
+    } catch (err) {
+      toast.error(err.message || 'Failed to update payment status');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner text="Connecting to database & loading orders ledger..." />;
   }
@@ -96,13 +140,92 @@ export const AdminOrdersPage = () => {
     const matchesSearch =
       ord.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
       (ord.studentName && ord.studentName.toLowerCase().includes(search.toLowerCase())) ||
-      (ord.studentPhone && ord.studentPhone.includes(search));
+      (ord.studentPhone && ord.studentPhone.includes(search)) ||
+      (ord.roomNumber && ord.roomNumber.toLowerCase().includes(search.toLowerCase()));
     if (!matchesSearch) return false;
-    if (activeTab === 'all') return true;
-    return ord.status === activeTab;
+
+    if (activeTab !== 'all' && ord.status !== activeTab) return false;
+
+    if (paymentMethodFilter !== 'all') {
+      const isUpi = ord.paymentMethod === 'upi' || ord.paymentMethod === 'upi_on_delivery';
+      if (paymentMethodFilter === 'upi' && !isUpi) return false;
+      if (paymentMethodFilter === 'cash_on_delivery' && ord.paymentMethod !== 'cash_on_delivery') return false;
+    }
+
+    if (paymentStatusFilter !== 'all') {
+      if (ord.paymentStatus !== paymentStatusFilter) return false;
+    }
+
+    return true;
   });
 
   const displayOrders = filteredOrders;
+
+  const renderPaymentMethodBadge = (method) => {
+    const isUpi = method === 'upi' || method === 'upi_on_delivery';
+    if (isUpi) {
+      return (
+        <span
+          className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-500/15 text-amber-700 border border-amber-300"
+          data-testid="badge-method-upi"
+        >
+          UPI
+        </span>
+      );
+    }
+    return (
+      <span
+        className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200"
+        data-testid="badge-method-cod"
+      >
+        COD
+      </span>
+    );
+  };
+
+  const renderPaymentStatusBadge = (status) => {
+    if (status === 'pending_verification') {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-300 animate-pulse"
+          data-testid="badge-status-pending-verification"
+        >
+          <AlertCircle className="w-3 h-3 text-amber-600" />
+          Pending Verification
+        </span>
+      );
+    }
+    if (status === 'paid') {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200"
+          data-testid="badge-status-paid"
+        >
+          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+          Paid
+        </span>
+      );
+    }
+    if (status === 'failed') {
+      return (
+        <span
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-100 text-rose-800 border border-rose-200"
+          data-testid="badge-status-failed"
+        >
+          <XCircle className="w-3 h-3 text-rose-600" />
+          Failed
+        </span>
+      );
+    }
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200"
+        data-testid="badge-status-pending"
+      >
+        Pending
+      </span>
+    );
+  };
 
   return (
     <div className="space-y-5 sm:space-y-6 max-w-7xl mx-auto min-w-0">
@@ -124,16 +247,44 @@ export const AdminOrdersPage = () => {
         </div>
       </div>
 
-      {/* Search Input */}
-      <div className="relative max-w-md w-full">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search orders by ID, student name, or phone..."
-          className="w-full bg-white border border-slate-200 focus:border-brand-orange rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 shadow-xs focus:outline-none"
-        />
+      {/* Search and Filters Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search orders by ID, student name, or phone..."
+            className="w-full bg-white border border-slate-200 focus:border-brand-orange rounded-xl pl-10 pr-4 py-2.5 text-xs text-slate-900 placeholder-slate-400 shadow-xs focus:outline-none"
+          />
+        </div>
+
+        {/* Payment Method Filter */}
+        <select
+          value={paymentMethodFilter}
+          onChange={(e) => setPaymentMethodFilter(e.target.value)}
+          className="bg-white border border-slate-200 focus:border-brand-orange rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 shadow-xs focus:outline-none cursor-pointer"
+          data-testid="filter-payment-method"
+        >
+          <option value="all">All Methods</option>
+          <option value="upi">UPI</option>
+          <option value="cash_on_delivery">Cash on Delivery</option>
+        </select>
+
+        {/* Payment Status Filter */}
+        <select
+          value={paymentStatusFilter}
+          onChange={(e) => setPaymentStatusFilter(e.target.value)}
+          className="bg-white border border-slate-200 focus:border-brand-orange rounded-xl px-3 py-2.5 text-xs font-bold text-slate-700 shadow-xs focus:outline-none cursor-pointer"
+          data-testid="filter-payment-status"
+        >
+          <option value="all">All Payment Statuses</option>
+          <option value="pending_verification">Pending Verification</option>
+          <option value="paid">Paid</option>
+          <option value="pending">Pending</option>
+          <option value="failed">Failed</option>
+        </select>
       </div>
 
       {/* Filter Tabs */}
@@ -226,8 +377,14 @@ export const AdminOrdersPage = () => {
                 <div className="text-xs">
                   <div className="font-bold text-slate-900">{ord.studentName}</div>
                   <div className="text-slate-500 text-[11px] mt-0.5">
-                    {ord.hostelBlock}, Room {ord.roomNumber}
+                    {ord.hostelBlock}, Room {ord.roomNumber} • 📞 {ord.studentPhone}
                   </div>
+                </div>
+
+                {/* Payment Badge Row */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {renderPaymentMethodBadge(ord.paymentMethod)}
+                  {renderPaymentStatusBadge(ord.paymentStatus)}
                 </div>
 
                 {/* Bottom Row: Items count, Total & View Action */}
@@ -248,6 +405,7 @@ export const AdminOrdersPage = () => {
                     onClick={() => {
                       setSelectedOrder(ord);
                       setStatusToUpdate(ord.status);
+                      setPaymentStatusToUpdate(ord.paymentStatus);
                     }}
                     className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-brand-orange hover:text-black text-slate-800 font-bold text-xs transition-colors shadow-2xs"
                   >
@@ -272,6 +430,7 @@ export const AdminOrdersPage = () => {
                 <th className="py-3 px-4">Items</th>
                 <th className="py-3 px-4">Total</th>
                 <th className="py-3 px-4">Type</th>
+                <th className="py-3 px-4">Payment</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Time</th>
                 <th className="py-3 px-4 text-right">Action</th>
@@ -280,7 +439,7 @@ export const AdminOrdersPage = () => {
             <tbody className="divide-y divide-slate-100">
               {displayOrders.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="py-12 text-center text-slate-400 text-xs">
+                  <td colSpan="10" className="py-12 text-center text-slate-400 text-xs">
                     {orders.length === 0
                       ? 'No orders have been placed yet.'
                       : 'No orders found matching your search.'}
@@ -309,7 +468,10 @@ export const AdminOrdersPage = () => {
                       </td>
 
                       <td className="py-3.5 px-4 font-bold text-slate-900">
-                        {ord.studentName}
+                        <div>{ord.studentName}</div>
+                        <div className="text-[10px] text-slate-400 font-mono font-normal">
+                          {ord.studentPhone}
+                        </div>
                       </td>
 
                       <td className="py-3.5 px-4 text-slate-600">
@@ -326,6 +488,13 @@ export const AdminOrdersPage = () => {
 
                       <td className="py-3.5 px-4 font-bold text-slate-600">
                         {isPickup ? 'Pickup' : 'Delivery'}
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-col gap-1 items-start">
+                          {renderPaymentMethodBadge(ord.paymentMethod)}
+                          {renderPaymentStatusBadge(ord.paymentStatus)}
+                        </div>
                       </td>
 
                       <td className="py-3.5 px-4">
@@ -358,6 +527,7 @@ export const AdminOrdersPage = () => {
                           onClick={() => {
                             setSelectedOrder(ord);
                             setStatusToUpdate(ord.status);
+                            setPaymentStatusToUpdate(ord.paymentStatus);
                           }}
                           className="px-3 py-1 rounded-lg border border-slate-200 hover:border-brand-orange hover:bg-brand-orange hover:text-black text-slate-700 text-xs font-bold transition-all shadow-2xs"
                         >
@@ -436,8 +606,10 @@ export const AdminOrdersPage = () => {
                 <div className="font-bold text-slate-900 capitalize">
                   {selectedOrder.orderType === 'pickup' ? 'Self Pickup at Kitchen' : 'Hostel Room Delivery'}
                 </div>
-                <div className="text-slate-600 font-medium capitalize">
-                  Method: {selectedOrder.paymentMethod?.replace(/_/g, ' ')}
+                <div className="flex items-center space-x-2 pt-0.5 flex-wrap gap-1">
+                  <span className="text-slate-600 font-medium">Payment:</span>
+                  {renderPaymentMethodBadge(selectedOrder.paymentMethod)}
+                  {renderPaymentStatusBadge(selectedOrder.paymentStatus)}
                 </div>
                 {selectedOrder.deliveryNotes && (
                   <div className="text-amber-800 text-[11px] bg-amber-50 p-1.5 rounded-lg border border-amber-200/50 mt-1">
@@ -446,6 +618,54 @@ export const AdminOrdersPage = () => {
                 )}
               </div>
             </div>
+
+            {/* UPI Payment Verification Card for Admins */}
+            {(selectedOrder.paymentMethod === 'upi' || selectedOrder.paymentMethod === 'upi_on_delivery') && (
+              <div
+                className={`my-3 p-3.5 rounded-2xl border ${
+                  selectedOrder.paymentStatus === 'pending_verification'
+                    ? 'bg-amber-50/90 border-amber-200'
+                    : 'bg-emerald-50/80 border-emerald-200'
+                }`}
+                data-testid="admin-payment-verification-card"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                  <div>
+                    <div className="flex items-center space-x-1.5">
+                      {selectedOrder.paymentStatus === 'pending_verification' ? (
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      )}
+                      <span className="text-xs font-black text-slate-900">
+                        {selectedOrder.paymentStatus === 'pending_verification'
+                          ? 'UPI Payment Awaiting Admin Verification'
+                          : 'UPI Payment Confirmed & Verified'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Recipient: <strong className="text-slate-800 font-bold">Dheeraj</strong> (
+                      <span className="font-mono text-slate-700">dheerajbhardwaj621@oksbi</span>) • Amount:{' '}
+                      <strong className="text-brand-orange font-bold">
+                        {formatCurrency(selectedOrder.totalAmount)}
+                      </strong>
+                    </p>
+                  </div>
+
+                  {selectedOrder.paymentStatus === 'pending_verification' && (
+                    <button
+                      onClick={() => handleVerifyPayment(selectedOrder._id)}
+                      disabled={updating}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center space-x-1.5 shadow-sm transition-all active:scale-95 disabled:opacity-50 shrink-0 cursor-pointer"
+                      data-testid="admin-verify-payment-btn"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>{updating ? 'Verifying...' : 'Verify UPI Payment'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Order Items List */}
             <div className="py-4">
@@ -495,45 +715,75 @@ export const AdminOrdersPage = () => {
               <div className="text-xs space-y-1">
                 <div className="flex justify-between space-x-8 text-slate-600">
                   <span>Subtotal:</span>
-                  <span className="font-bold text-slate-900">
+                  <span className="font-bold text-slate-900" data-testid="admin-order-subtotal">
                     {formatCurrency(selectedOrder.subtotal ?? 0)}
                   </span>
                 </div>
                 <div className="flex justify-between space-x-8 text-slate-600">
                   <span>Delivery Charge:</span>
-                  <span className="font-bold text-slate-900">
-                    {formatCurrency(selectedOrder.deliveryFee ?? 0)}
+                  <span
+                    className={`font-bold ${selectedOrder.deliveryFee === 0 ? 'text-emerald-600' : 'text-slate-900'}`}
+                    data-testid="admin-order-delivery-fee"
+                  >
+                    {selectedOrder.deliveryFee === 0 ? 'FREE (₹0)' : formatCurrency(selectedOrder.deliveryFee ?? 0)}
                   </span>
                 </div>
                 <div className="flex justify-between space-x-8 text-sm font-black text-slate-900 pt-1 border-t border-slate-200">
                   <span>Total:</span>
-                  <span className="text-brand-orange">
+                  <span className="text-brand-orange" data-testid="admin-order-total-amount">
                     {formatCurrency(selectedOrder.totalAmount ?? 0)}
                   </span>
                 </div>
               </div>
 
-              {/* Status Update Dropdown + Orange Button */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <select
-                  value={statusToUpdate}
-                  onChange={(e) => setStatusToUpdate(e.target.value)}
-                  className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none cursor-pointer w-full sm:w-auto"
-                >
-                  <option value="placed">Pending (Placed)</option>
-                  <option value="preparing">In Kitchen (Preparing)</option>
-                  <option value="out_for_delivery">Out for Delivery (Ready)</option>
-                  <option value="delivered">Completed (Delivered)</option>
-                  <option value="cancelled">Cancelled (Restore Stock)</option>
-                </select>
+              {/* Status & Payment Update Controls */}
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <select
+                    value={statusToUpdate}
+                    onChange={(e) => setStatusToUpdate(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none cursor-pointer flex-1"
+                    data-testid="admin-select-order-status"
+                  >
+                    <option value="placed">Pending (Placed)</option>
+                    <option value="preparing">In Kitchen (Preparing)</option>
+                    <option value="out_for_delivery">Out for Delivery (Ready)</option>
+                    <option value="delivered">Completed (Delivered)</option>
+                    <option value="cancelled">Cancelled (Restore Stock)</option>
+                  </select>
 
-                <button
-                  onClick={() => handleUpdateStatus(selectedOrder._id, statusToUpdate)}
-                  disabled={updating}
-                  className="px-5 py-2 rounded-xl bg-brand-orange hover:bg-brand-yellow text-black font-black text-xs shadow-md transition-all active:scale-95 disabled:opacity-50 text-center"
-                >
-                  {updating ? 'Updating...' : 'Update Status'}
-                </button>
+                  <button
+                    onClick={() => handleUpdateStatus(selectedOrder._id, statusToUpdate)}
+                    disabled={updating}
+                    className="px-4 py-2 rounded-xl bg-brand-orange hover:bg-brand-yellow text-black font-black text-xs shadow-md transition-all active:scale-95 disabled:opacity-50 shrink-0 cursor-pointer"
+                    data-testid="admin-update-status-btn"
+                  >
+                    {updating ? '...' : 'Update Status'}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={paymentStatusToUpdate}
+                    onChange={(e) => setPaymentStatusToUpdate(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 focus:outline-none cursor-pointer flex-1"
+                    data-testid="admin-select-payment-status"
+                  >
+                    <option value="pending_verification">Pending Verification</option>
+                    <option value="paid">Paid (Verified)</option>
+                    <option value="pending">Pending</option>
+                    <option value="failed">Failed</option>
+                  </select>
+
+                  <button
+                    onClick={() => handleUpdatePaymentStatus(selectedOrder._id, paymentStatusToUpdate)}
+                    disabled={updating}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black text-white font-bold text-xs shadow-md transition-all active:scale-95 disabled:opacity-50 shrink-0 cursor-pointer"
+                    data-testid="admin-update-payment-btn"
+                  >
+                    {updating ? '...' : 'Set Payment'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

@@ -15,19 +15,28 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-export const uploadSingleImage = multer({
+const upload = multer({
   storage,
   limits: {
     fileSize: MAX_FILE_SIZE_BYTES,
   },
   fileFilter,
-}).single('image');
+});
+
+export const uploadSingleImage = upload.single('image');
+
+export const uploadMultipleImages = upload.array('images', 50);
+
+const multiFieldUpload = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'images', maxCount: 50 },
+]);
 
 export const handleImageUploadMiddleware = (req, res, next) => {
-  uploadSingleImage(req, res, (err) => {
+  multiFieldUpload(req, res, (err) => {
     if (err instanceof multer.MulterError) {
       if (err.code === 'LIMIT_FILE_SIZE') {
-        const error = new Error('Image file is too large. Maximum allowed size is 5 MB.');
+        const error = new Error('Image file is too large. Maximum allowed size is 5 MB per image.');
         error.statusCode = 400;
         return next(error);
       }
@@ -37,6 +46,26 @@ export const handleImageUploadMiddleware = (req, res, next) => {
     } else if (err) {
       return next(err);
     }
+
+    // Normalize files for downstream consumers
+    const collectedFiles = [];
+    if (req.files) {
+      if (req.files.image && req.files.image.length > 0) {
+        collectedFiles.push(...req.files.image);
+      }
+      if (req.files.images && req.files.images.length > 0) {
+        collectedFiles.push(...req.files.images);
+      }
+    }
+    if (req.file) {
+      if (!collectedFiles.includes(req.file)) {
+        collectedFiles.push(req.file);
+      }
+    } else if (collectedFiles.length > 0) {
+      req.file = collectedFiles[0];
+    }
+    req.allImageFiles = collectedFiles;
+
     next();
   });
 };

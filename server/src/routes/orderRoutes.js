@@ -5,11 +5,16 @@ import {
   trackOrder,
   getAllOrders,
   updateOrderStatus,
+  updatePaymentStatus,
   getDashboardAnalytics,
 } from '../controllers/orderController.js';
 import { requireAuth, requireAdmin } from '../middleware/authMiddleware.js';
 import { validateBody } from '../middleware/validateMiddleware.js';
-import { createOrderSchema, updateOrderStatusSchema } from '../validators/orderValidator.js';
+import {
+  createOrderSchema,
+  updateOrderStatusSchema,
+  updatePaymentStatusSchema,
+} from '../validators/orderValidator.js';
 
 const router = Router();
 
@@ -27,6 +32,13 @@ router.patch(
   requireAdmin,
   validateBody(updateOrderStatusSchema),
   updateOrderStatus
+);
+router.patch(
+  '/:id/payment-status',
+  requireAuth,
+  requireAdmin,
+  validateBody(updatePaymentStatusSchema),
+  updatePaymentStatus
 );
 
 export default router;

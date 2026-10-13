@@ -53,8 +53,15 @@ export const trackOrder = async (req, res, next) => {
 
 export const getAllOrders = async (req, res, next) => {
   try {
-    const { status, search, limit, page } = req.query;
-    const result = await orderService.getAllOrders({ status, search, limit, page });
+    const { status, paymentStatus, paymentMethod, search, limit, page } = req.query;
+    const result = await orderService.getAllOrders({
+      status,
+      paymentStatus,
+      paymentMethod,
+      search,
+      limit,
+      page,
+    });
     return sendSuccess(res, result, 'Orders list retrieved');
   } catch (error) {
     next(error);
@@ -63,14 +70,33 @@ export const getAllOrders = async (req, res, next) => {
 
 export const updateOrderStatus = async (req, res, next) => {
   try {
-    const { status, note } = req.body;
+    const { status, paymentStatus, note } = req.body;
     const updatedOrder = await orderService.updateOrderStatus(
       req.params.id,
-      status,
+      { status, paymentStatus, note },
       note,
       req.user ? req.user.name : 'admin'
     );
-    return sendSuccess(res, updatedOrder, `Order status updated to ${status}`);
+    const message =
+      paymentStatus && !status
+        ? `Order payment status updated to ${paymentStatus}`
+        : `Order status updated to ${status || updatedOrder.status}`;
+    return sendSuccess(res, updatedOrder, message);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updatePaymentStatus = async (req, res, next) => {
+  try {
+    const { paymentStatus, note } = req.body;
+    const updatedOrder = await orderService.updatePaymentStatus(
+      req.params.id,
+      paymentStatus,
+      note,
+      req.user ? req.user.name : 'admin'
+    );
+    return sendSuccess(res, updatedOrder, `Payment status updated to ${paymentStatus}`);
   } catch (error) {
     next(error);
   }

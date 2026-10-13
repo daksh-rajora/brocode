@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Check, ArrowLeft, Truck, PackageCheck, AlertCircle } from 'lucide-react';
+import {
+  ArrowRight,
+  Check,
+  ArrowLeft,
+  Truck,
+  PackageCheck,
+  AlertCircle,
+  QrCode,
+  Copy,
+  Info,
+  CheckCircle2,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
+import qrCodeImg from '../assets/qr.jpeg';
 import { useCart } from '../hooks/useCart';
 import { apiService } from '../services/api';
-import { DEFAULT_HOSTEL_BLOCKS, PAYMENT_METHODS } from '../data/hostelConfig';
+import { DEFAULT_HOSTEL_BLOCKS, PAYMENT_METHODS, UPI_CONFIG } from '../data/hostelConfig';
 import { formatCurrency } from '../utils/formatters';
+import { useSocketEvent } from '../hooks/useSocket';
 
 export const CheckoutPage = () => {
   const { items, subtotal, totalItems, deliveryInfo, updateDeliveryInfo, clearCart } = useCart();
@@ -14,6 +27,8 @@ export const CheckoutPage = () => {
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState(null);
   const [orderType, setOrderType] = useState('delivery'); // 'delivery' or 'pickup'
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [copiedUpi, setCopiedUpi] = useState(false);
   const [formData, setFormData] = useState({
     studentName: deliveryInfo?.studentName || '',
     studentPhone: deliveryInfo?.studentPhone || localStorage.getItem('brocode_student_phone') || '',
@@ -23,23 +38,47 @@ export const CheckoutPage = () => {
         : 'BH1',
     roomNumber: deliveryInfo?.roomNumber || '',
     deliveryNotes: deliveryInfo?.deliveryNotes || '',
-    paymentMethod: deliveryInfo?.paymentMethod || 'cash_on_delivery',
+    paymentMethod:
+      deliveryInfo?.paymentMethod === 'cash_on_delivery' ? 'cash_on_delivery' : 'upi',
   });
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
+  const unavailableCartItem = items.find(
+    (item) => item.product.isAvailable === false || Number(item.product.stock) <= 0
+  );
 
   const loadSettings = async () => {
     try {
       const res = await apiService.getSettings();
       setSettings(res.data);
     } catch (err) {
-      console.warn('Could not load store settings, using standard fee:', err);
+      console.warn('Could not load store settings:', err);
     }
   };
 
-  const configuredDeliveryFee = settings?.deliveryFee ?? 10;
+  useEffect(() => {
+    loadSettings();
+    window.addEventListener('focus', loadSettings);
+    return () => window.removeEventListener('focus', loadSettings);
+  }, []);
+
+  useEffect(() => {
+    if (unavailableCartItem) {
+      toast.error(`"${unavailableCartItem.product.name}" is out of stock. Please remove it from your cart.`);
+      navigate('/cart');
+    }
+  }, [items]);
+
+  // Real-time update when admin updates delivery settings
+  useSocketEvent('settings:updated', (updated) => {
+    if (updated) {
+      setSettings(updated);
+    }
+  });
+
+  const configuredDeliveryFee =
+    typeof settings?.deliveryFee === 'number' && settings.deliveryFee >= 0
+      ? settings.deliveryFee
+      : 0;
   const deliveryCharge = orderType === 'pickup' ? 0 : configuredDeliveryFee;
   const totalAmount = subtotal + deliveryCharge;
 
@@ -49,8 +88,24 @@ export const CheckoutPage = () => {
     updateDeliveryInfo({ [name]: value });
   };
 
+  const handleCopyUpi = (e) => {
+    e.preventDefault();
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText(UPI_CONFIG.upiId);
+    }
+    setCopiedUpi(true);
+    toast.success('UPI ID copied to clipboard!');
+    setTimeout(() => setCopiedUpi(false), 2000);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (unavailableCartItem) {
+      toast.error(`"${unavailableCartItem.product.name}" is out of stock. Please remove it from your cart.`);
+      navigate('/cart');
+      return;
+    }
 
     if (!formData.studentName.trim()) {
       toast.error('Please enter your full name');
@@ -73,6 +128,11 @@ export const CheckoutPage = () => {
 
     if (settings && subtotal < settings.minOrderAmount) {
       toast.error(`Minimum order amount is ₹${settings.minOrderAmount}`);
+      return;
+    }
+
+    if (formData.paymentMethod === 'upi' && !paymentConfirmed) {
+      toast.error('Please complete the UPI payment and confirm above before placing the order.');
       return;
     }
 
@@ -178,7 +238,9 @@ export const CheckoutPage = () => {
               <Truck className={`w-5 h-5 ${orderType === 'delivery' ? 'text-brand-orange' : 'text-slate-500'}`} />
               <div className="text-left">
                 <div className="text-xs font-black">Room Delivery</div>
-                <div className="text-[10px] opacity-80">+{formatCurrency(configuredDeliveryFee)} fee</div>
+                <div className="text-[10px] opacity-80" data-testid="room-delivery-fee-badge">
+                  {configuredDeliveryFee === 0 ? 'FREE delivery' : `+${formatCurrency(configuredDeliveryFee)} fee`}
+                </div>
               </div>
             </button>
 
@@ -311,14 +373,14 @@ export const CheckoutPage = () => {
                 />
                 <div>
                   <div className="text-xs font-bold text-white">Cash on Delivery</div>
-                  <div className="text-[10px] text-slate-400">Pay cash upon delivery at your door</div>
+                  <div className="text-[10px] text-slate-400">Pay cash upon delivery at your room door</div>
                 </div>
               </label>
 
               <label
-                onClick={() => handleChange({ target: { name: 'paymentMethod', value: 'upi_on_delivery' } })}
+                onClick={() => handleChange({ target: { name: 'paymentMethod', value: 'upi' } })}
                 className={`flex items-center space-x-3 p-3 rounded-xl border cursor-pointer transition-colors ${
-                  formData.paymentMethod === 'upi_on_delivery'
+                  formData.paymentMethod === 'upi'
                     ? 'border-brand-orange bg-[#261E14]'
                     : 'border-[#2E2E2E] bg-[#222222] hover:bg-[#252525]'
                 }`}
@@ -326,29 +388,142 @@ export const CheckoutPage = () => {
                 <input
                   type="radio"
                   name="paymentMethod"
-                  value="upi_on_delivery"
-                  checked={formData.paymentMethod === 'upi_on_delivery'}
+                  value="upi"
+                  checked={formData.paymentMethod === 'upi'}
                   onChange={handleChange}
                   className="text-brand-orange focus:ring-brand-orange"
                 />
                 <div>
-                  <div className="text-xs font-bold text-white">UPI on Delivery</div>
-                  <div className="text-[10px] text-slate-400">Scan QR code via GPay / PhonePe / Paytm</div>
+                  <div className="text-xs font-bold text-white">UPI</div>
+                  <div className="text-[10px] text-slate-400">Scan QR code & pay instantly with any UPI app</div>
                 </div>
               </label>
             </div>
           </div>
 
+          {/* UPI QR Payment Flow (Shown only when UPI is selected) */}
+          {formData.paymentMethod === 'upi' && (
+            <div
+              className="p-4 sm:p-5 rounded-2xl bg-[#201D1A] border border-[#3E3224] space-y-4 animate-fade-in"
+              data-testid="upi-qr-section"
+            >
+              {/* Header and Instructions */}
+              <div className="flex items-start space-x-2.5">
+                <div className="p-2 rounded-xl bg-brand-orange/20 text-brand-orange shrink-0 mt-0.5">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                    Instant UPI QR Payment
+                  </h3>
+                  <p className="text-[11px] text-amber-200/90 font-medium leading-relaxed mt-0.5" data-testid="upi-instructions">
+                    {UPI_CONFIG.instruction}
+                  </p>
+                </div>
+              </div>
+
+              {/* QR Image Card - Clean High-Contrast White Background & Mobile-Friendly Size */}
+              <div className="bg-white rounded-2xl p-4 shadow-xl text-center max-w-xs mx-auto border border-slate-200">
+                <div className="text-[10px] font-black uppercase text-slate-500 tracking-wider mb-2">
+                  GPay • PhonePe • Paytm • BHIM • Cred
+                </div>
+
+                <div className="w-52 h-52 sm:w-60 sm:h-60 mx-auto bg-white rounded-xl flex items-center justify-center p-1.5 overflow-hidden shadow-xs border border-slate-100">
+                  <img
+                    src={qrCodeImg}
+                    alt="UPI QR Code - Bro Code"
+                    className="w-full h-full object-contain"
+                    data-testid="upi-qr-image"
+                  />
+                </div>
+
+                {/* Verified Recipient Details from Actual QR Configuration */}
+                <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5 text-left text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500 font-semibold">Recipient:</span>
+                    <span className="font-extrabold text-slate-900" data-testid="upi-recipient-name">
+                      {UPI_CONFIG.recipientName}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] text-slate-500 font-semibold">UPI ID:</span>
+                    <div className="flex items-center space-x-1">
+                      <span className="font-mono font-bold text-slate-900 text-[11px]" data-testid="upi-id-display">
+                        {UPI_CONFIG.upiId}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyUpi}
+                        className="p-1 hover:bg-slate-100 rounded text-slate-500 hover:text-black transition-colors"
+                        title="Copy UPI ID"
+                        aria-label="Copy UPI ID"
+                        data-testid="upi-copy-btn"
+                      >
+                        {copiedUpi ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between text-slate-900 font-bold pt-1.5 border-t border-slate-100">
+                    <span className="text-[11px] text-slate-600">Total Payable:</span>
+                    <span className="text-sm font-black text-brand-orange" data-testid="upi-payable-amount">
+                      {formatCurrency(totalAmount)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Safe Flow Notice Explaining Pending Verification Limitation */}
+              <div className="bg-[#181818] border border-[#2E2E2E] rounded-xl p-3 text-[11px] text-slate-300 space-y-1">
+                <div className="flex items-center space-x-1.5 text-brand-orange font-bold text-xs">
+                  <Info className="w-3.5 h-3.5" />
+                  <span>Pending Verification Process</span>
+                </div>
+                <p className="text-slate-400 leading-normal">
+                  Static QR scanning does not provide automatic instant bank webhooks. Once submitted, your order will be placed with{' '}
+                  <span className="text-amber-300 font-bold">"Pending Verification"</span> status until verified by our hostel delivery bro.
+                </p>
+              </div>
+
+              {/* Customer Payment Confirmation */}
+              <label className="flex items-start space-x-3 p-3 bg-[#181818] border border-[#2E2E2E] hover:border-brand-orange/50 rounded-xl cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={paymentConfirmed}
+                  onChange={(e) => setPaymentConfirmed(e.target.checked)}
+                  className="mt-0.5 text-brand-orange focus:ring-brand-orange rounded w-4 h-4 cursor-pointer"
+                  data-testid="upi-payment-confirm-checkbox"
+                />
+                <div className="text-xs">
+                  <div className="font-bold text-white">
+                    I have completed the UPI payment of {formatCurrency(totalAmount)}
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">
+                    Check this box to confirm and submit your order for delivery verification.
+                  </div>
+                </div>
+              </label>
+            </div>
+          )}
+
           {/* Bill Summary */}
           <div className="pt-3 border-t border-[#262626] text-xs space-y-1.5 text-slate-300">
             <div className="flex justify-between">
               <span>Items Subtotal:</span>
-              <span className="font-bold text-white">{formatCurrency(subtotal)}</span>
+              <span className="font-bold text-white" data-testid="checkout-subtotal">{formatCurrency(subtotal)}</span>
             </div>
             <div className="flex justify-between">
               <span>{orderType === 'pickup' ? 'Self Pickup:' : 'Hostel Delivery Fee:'}</span>
-              <span className={`font-bold ${orderType === 'pickup' ? 'text-emerald-400' : 'text-white'}`}>
-                {orderType === 'pickup' ? 'FREE (₹0)' : formatCurrency(configuredDeliveryFee)}
+              <span
+                className={`font-bold ${deliveryCharge === 0 ? 'text-emerald-400' : 'text-white'}`}
+                data-testid="checkout-delivery-charge"
+              >
+                {deliveryCharge === 0 ? 'FREE (₹0)' : formatCurrency(deliveryCharge)}
               </span>
             </div>
           </div>
@@ -357,7 +532,7 @@ export const CheckoutPage = () => {
           <div className="pt-4 border-t border-[#262626] flex items-center justify-between">
             <div>
               <div className="text-[11px] text-slate-400 font-semibold">Total Amount</div>
-              <div className="text-lg font-black text-brand-orange">
+              <div className="text-lg font-black text-brand-orange" data-testid="checkout-total-amount">
                 {formatCurrency(totalAmount)}
               </div>
             </div>
@@ -367,7 +542,13 @@ export const CheckoutPage = () => {
               disabled={loading}
               className="py-3 px-8 rounded-full bg-brand-orange hover:bg-brand-yellow text-black font-black text-sm flex items-center space-x-2 shadow-brand transition-transform active:scale-95 disabled:opacity-50 cursor-pointer"
             >
-              <span>{loading ? 'Placing Order...' : 'Confirm Order'}</span>
+              <span>
+                {loading
+                  ? 'Placing Order...'
+                  : formData.paymentMethod === 'upi'
+                  ? 'Confirm Order (Pending Verification)'
+                  : 'Confirm Order'}
+              </span>
               <ArrowRight className="w-4 h-4 stroke-[3]" />
             </button>
           </div>

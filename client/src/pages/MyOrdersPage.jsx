@@ -230,8 +230,23 @@ export const MyOrdersPage = () => {
                     <div className="text-sm font-black text-white">
                       {formatCurrency(ord.totalAmount)}
                     </div>
-                    <div className="text-[10px] text-slate-400 capitalize">
-                      {ord.paymentMethod?.replace(/_/g, ' ')}
+                    <div className="text-[10px] text-slate-400">
+                      {ord.paymentMethod === 'upi' || ord.paymentMethod === 'upi_on_delivery' ? 'UPI' : 'Cash on Delivery'} •{' '}
+                      <span
+                        className={
+                          ord.paymentStatus === 'pending_verification'
+                            ? 'text-amber-400 font-bold'
+                            : ord.paymentStatus === 'paid'
+                            ? 'text-emerald-400 font-bold'
+                            : 'text-slate-400'
+                        }
+                      >
+                        {ord.paymentStatus === 'pending_verification'
+                          ? 'Pending Verification'
+                          : ord.paymentStatus === 'paid'
+                          ? 'Paid'
+                          : 'Pending'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -306,15 +321,20 @@ export const MyOrdersPage = () => {
             <div className="pt-3 text-xs space-y-1.5 text-slate-400">
               <div className="flex justify-between">
                 <span>Subtotal:</span>
-                <span className="text-white font-bold">{formatCurrency(selectedOrder.subtotal)}</span>
+                <span className="text-white font-bold" data-testid="order-detail-subtotal">{formatCurrency(selectedOrder.subtotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Delivery:</span>
-                <span className="text-white font-bold">{formatCurrency(selectedOrder.deliveryFee)}</span>
+                <span
+                  className={`font-bold ${selectedOrder.deliveryFee === 0 ? 'text-emerald-400' : 'text-white'}`}
+                  data-testid="order-detail-delivery-fee"
+                >
+                  {selectedOrder.deliveryFee === 0 ? 'FREE (₹0)' : formatCurrency(selectedOrder.deliveryFee)}
+                </span>
               </div>
               <div className="flex justify-between text-sm font-black text-white pt-1 border-t border-[#262626]">
                 <span>Total Amount:</span>
-                <span className="text-brand-orange">{formatCurrency(selectedOrder.totalAmount)}</span>
+                <span className="text-brand-orange" data-testid="order-detail-total-amount">{formatCurrency(selectedOrder.totalAmount)}</span>
               </div>
             </div>
 

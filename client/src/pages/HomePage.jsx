@@ -15,26 +15,40 @@ export const HomePage = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    loadProducts();
+    loadProducts(true);
+
+    const interval = setInterval(() => loadProducts(false), 8000);
+    const onFocus = () => loadProducts(false);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   useSocketEvent('inventory:updated', () => {
-    loadProducts();
+    loadProducts(false);
   });
 
   useSocketEvent('order:created', () => {
-    loadProducts();
+    loadProducts(false);
   });
 
-  const loadProducts = async () => {
+  const loadProducts = async (showSpinner = false) => {
     try {
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       const res = await apiService.getProducts({ limit: 100 });
-      setProducts(res.data || []);
+      const productList = res.data || [];
+      setProducts(productList);
+      setSelectedSnack((prev) => {
+        if (!prev) return null;
+        const fresh = productList.find((p) => p._id === prev._id);
+        return fresh || prev;
+      });
     } catch (error) {
       console.error('Failed to load products:', error);
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   };
 

@@ -23,37 +23,64 @@ export const AdminInventoryPage = () => {
   const [search, setSearch] = useState('');
   const [updatingId, setUpdatingId] = useState(null);
 
+  const [editingStockMap, setEditingStockMap] = useState({});
+
   useAdminSocket();
 
   useEffect(() => {
-    loadInventory();
+    loadInventory(true);
+
+    const interval = setInterval(() => loadInventory(false), 8000);
+    const onFocus = () => loadInventory(false);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
   }, []);
 
   useSocketEvent('inventory:updated', () => {
-    loadInventory();
+    loadInventory(false);
   });
 
-  const loadInventory = async () => {
+  const loadInventory = async (showSpinner = false) => {
     try {
-      setLoading(true);
-      const res = await apiService.getProducts({ limit: 100 });
+      if (showSpinner) setLoading(true);
+      const res = await apiService.getProducts({ limit: 100, includeInactive: 'true' });
       setProducts(res.data || []);
     } catch (err) {
       console.error('Failed to load inventory:', err);
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
+  };
+
+  const handleStockInputChange = (productId, val) => {
+    setEditingStockMap((prev) => ({ ...prev, [productId]: val }));
+  };
+
+  const handleSaveCustomStock = async (productId) => {
+    const rawVal = editingStockMap[productId];
+    if (rawVal === undefined || rawVal === '') return;
+    const cleanStock = Math.max(0, parseInt(rawVal, 10) || 0);
+    await handleStockUpdate(productId, cleanStock);
+    setEditingStockMap((prev) => {
+      const next = { ...prev };
+      delete next[productId];
+      return next;
+    });
   };
 
   const handleStockUpdate = async (productId, newStock) => {
     try {
       setUpdatingId(productId);
-      await apiService.updateStock(productId, { stock: Math.max(0, parseInt(newStock, 10) || 0) });
-      toast.success('Stock updated');
+      const cleanStock = Math.max(0, parseInt(newStock, 10) || 0);
+      await apiService.updateStock(productId, { stock: cleanStock });
+      toast.success(`Stock updated to ${cleanStock} units`);
       setProducts((prev) =>
         prev.map((p) =>
           p._id === productId
-            ? { ...p, stock: Math.max(0, parseInt(newStock, 10) || 0), isAvailable: newStock > 0 }
+            ? { ...p, stock: cleanStock, isAvailable: cleanStock > 0 }
             : p
         )
       );
@@ -249,7 +276,7 @@ export const AdminInventoryPage = () => {
                 )}
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-2 border-t border-slate-100 text-xs gap-2">
                 <div>
                   <span className="text-[11px] text-slate-500 font-semibold">Current Stock: </span>
                   <span className={`font-black ${isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-slate-900'}`}>
@@ -257,8 +284,47 @@ export const AdminInventoryPage = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center space-x-1.5">
-                  <span className="text-[10px] text-slate-400 font-bold mr-1">Add:</span>
+                <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder={String(p.stock)}
+                    value={editingStockMap[p._id] !== undefined ? editingStockMap[p._id] : ''}
+                    onChange={(e) => handleStockInputChange(p._id, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSaveCustomStock(p._id);
+                      }
+                    }}
+                    className="w-14 px-2 py-1 text-center bg-slate-50 border border-slate-200 focus:border-brand-orange rounded-lg text-xs font-bold focus:outline-none"
+                    title="Enter custom stock"
+                  />
+                  {editingStockMap[p._id] !== undefined && (
+                    <button
+                      onClick={() => handleSaveCustomStock(p._id)}
+                      disabled={updatingId === p._id}
+                      className="px-2 py-1 rounded-lg bg-brand-orange hover:bg-brand-yellow text-black text-[10px] font-black transition-colors"
+                    >
+                      Set
+                    </button>
+                  )}
+                  <button
+                    onClick={() => handleStockUpdate(p._id, 0)}
+                    disabled={updatingId === p._id || p.stock === 0}
+                    className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold transition-colors disabled:opacity-40"
+                    title="Set to 0 (Unavailable)"
+                  >
+                    Set 0
+                  </button>
+                  <button
+                    onClick={() => handleStockUpdate(p._id, Math.max(0, p.stock - 10))}
+                    disabled={updatingId === p._id || p.stock === 0}
+                    className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-rose-100 hover:text-rose-700 text-slate-700 text-[10px] font-bold transition-colors disabled:opacity-40"
+                    title="Reduce by 10"
+                  >
+                    -10
+                  </button>
                   <button
                     onClick={() => handleStockUpdate(p._id, p.stock + 10)}
                     disabled={updatingId === p._id}
@@ -267,18 +333,11 @@ export const AdminInventoryPage = () => {
                     +10
                   </button>
                   <button
-                    onClick={() => handleStockUpdate(p._id, p.stock + 25)}
+                    onClick={() => handleStockUpdate(p._id, p.stock + 15)}
                     disabled={updatingId === p._id}
                     className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-brand-orange hover:text-black text-slate-700 text-[11px] font-bold transition-colors"
                   >
-                    +25
-                  </button>
-                  <button
-                    onClick={() => handleStockUpdate(p._id, p.stock + 50)}
-                    disabled={updatingId === p._id}
-                    className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-brand-orange hover:text-black text-slate-700 text-[11px] font-bold transition-colors"
-                  >
-                    +50
+                    +15
                   </button>
                 </div>
               </div>
@@ -300,7 +359,7 @@ export const AdminInventoryPage = () => {
                 <th className="py-3 px-4">Price</th>
                 <th className="py-3 px-4">Current Stock</th>
                 <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Quick Restock</th>
+                <th className="py-3 px-4 text-right">Quick Stock Adjustment</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -350,7 +409,7 @@ export const AdminInventoryPage = () => {
                     <td className="py-3 px-4">
                       {isOut ? (
                         <span className="inline-block px-2.5 py-1 rounded-full bg-rose-50 text-rose-600 font-extrabold text-[10px] border border-rose-200">
-                          Out of Stock
+                          Unavailable
                         </span>
                       ) : isLow ? (
                         <span className="inline-block px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-extrabold text-[10px] border border-amber-200">
@@ -363,7 +422,47 @@ export const AdminInventoryPage = () => {
                       )}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <div className="inline-flex items-center space-x-1.5">
+                      <div className="inline-flex items-center space-x-1.5 flex-wrap justify-end gap-y-1">
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder={String(p.stock)}
+                          value={editingStockMap[p._id] !== undefined ? editingStockMap[p._id] : ''}
+                          onChange={(e) => handleStockInputChange(p._id, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleSaveCustomStock(p._id);
+                            }
+                          }}
+                          className="w-16 px-2 py-1 text-center bg-slate-50 border border-slate-200 focus:border-brand-orange rounded-lg text-xs font-bold focus:outline-none"
+                          title="Enter custom stock number"
+                        />
+                        {editingStockMap[p._id] !== undefined && (
+                          <button
+                            onClick={() => handleSaveCustomStock(p._id)}
+                            disabled={updatingId === p._id}
+                            className="px-2 py-1 rounded-lg bg-brand-orange hover:bg-brand-yellow text-black text-[10px] font-black transition-colors"
+                          >
+                            Set
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleStockUpdate(p._id, 0)}
+                          disabled={updatingId === p._id || p.stock === 0}
+                          className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-[10px] font-bold transition-colors disabled:opacity-40"
+                          title="Set stock to 0 (Unavailable)"
+                        >
+                          Set 0
+                        </button>
+                        <button
+                          onClick={() => handleStockUpdate(p._id, Math.max(0, p.stock - 10))}
+                          disabled={updatingId === p._id || p.stock === 0}
+                          className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-rose-100 hover:text-rose-700 text-slate-700 text-[10px] font-bold transition-colors disabled:opacity-40"
+                          title="Reduce stock by 10"
+                        >
+                          -10
+                        </button>
                         <button
                           onClick={() => handleStockUpdate(p._id, p.stock + 10)}
                           disabled={updatingId === p._id}
@@ -372,18 +471,18 @@ export const AdminInventoryPage = () => {
                           +10
                         </button>
                         <button
+                          onClick={() => handleStockUpdate(p._id, p.stock + 15)}
+                          disabled={updatingId === p._id}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-brand-orange hover:text-black text-slate-700 text-[11px] font-bold transition-colors"
+                        >
+                          +15
+                        </button>
+                        <button
                           onClick={() => handleStockUpdate(p._id, p.stock + 25)}
                           disabled={updatingId === p._id}
                           className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-brand-orange hover:text-black text-slate-700 text-[11px] font-bold transition-colors"
                         >
                           +25
-                        </button>
-                        <button
-                          onClick={() => handleStockUpdate(p._id, p.stock + 50)}
-                          disabled={updatingId === p._id}
-                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-brand-orange hover:text-black text-slate-700 text-[11px] font-bold transition-colors"
-                        >
-                          +50
                         </button>
                       </div>
                     </td>

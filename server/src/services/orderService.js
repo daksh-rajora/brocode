@@ -20,7 +20,7 @@ export const orderService = {
     hostelBlock,
     roomNumber,
     items,
-    paymentMethod = 'upi_on_delivery',
+    paymentMethod = 'upi',
     orderType = 'delivery',
     deliveryNotes = '',
   }) {
@@ -55,8 +55,14 @@ export const orderService = {
         throw err;
       }
 
-      if (product.isActive === false || product.isAvailable === false) {
+      if (product.isActive === false) {
         const err = new Error(`"${product.name}" is currently unavailable for order.`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      if (product.stock <= 0) {
+        const err = new Error(`"${product.name}" is out of stock and unavailable for purchase.`);
         err.statusCode = 400;
         throw err;
       }
@@ -99,7 +105,6 @@ export const orderService = {
             _id: item.productId,
             stock: { $gte: item.quantity },
             isActive: { $ne: false },
-            isAvailable: { $ne: false },
           },
           {
             $inc: { stock: -item.quantity },
@@ -117,13 +122,24 @@ export const orderService = {
           throw err;
         }
 
+        if (updatedProduct.stock === 0) {
+          await Product.findByIdAndUpdate(item.productId, { isAvailable: false });
+        }
+
         deductedItems.push({ productId: item.productId, quantity: item.quantity });
       }
 
-      // Delivery fee: ₹0 for Self Pickup, configured fee for Delivery
-      const deliveryFee = orderType === 'pickup' ? 0 : (settings.deliveryFee || 0);
+      // Delivery fee: ₹0 for Self Pickup, configured fee for Delivery (from MongoDB StoreSetting)
+      const configuredFee =
+        typeof settings?.deliveryFee === 'number' && settings.deliveryFee >= 0
+          ? settings.deliveryFee
+          : 0;
+      const deliveryFee = orderType === 'pickup' ? 0 : configuredFee;
       const totalAmount = subtotal + deliveryFee;
       const orderNumber = generateOrderNumber();
+
+      const isUpi = paymentMethod === 'upi' || paymentMethod === 'upi_on_delivery';
+      const paymentStatus = isUpi ? 'pending_verification' : 'pending';
 
       const order = await Order.create({
         orderNumber,
@@ -136,6 +152,7 @@ export const orderService = {
         deliveryFee,
         totalAmount,
         paymentMethod,
+        paymentStatus,
         orderType,
         deliveryNotes,
         status: 'placed',
@@ -145,7 +162,9 @@ export const orderService = {
           {
             status: 'placed',
             timestamp: new Date(),
-            note: `Order received (${orderType === 'pickup' ? 'Self Pickup' : 'Hostel Delivery'}) for ${hostelBlock}, ${roomNumber}.`,
+            note: isUpi
+              ? `Order placed via UPI (Pending Verification). Fulfillment queued for ${hostelBlock}, ${roomNumber}.`
+              : `Order received (${orderType === 'pickup' ? 'Self Pickup' : 'Hostel Delivery'}) for ${hostelBlock}, ${roomNumber}.`,
             updatedBy: 'student',
           },
         ],
@@ -161,9 +180,14 @@ export const orderService = {
       // Rollback any successfully deducted items if deduction or Order.create failed
       for (const deducted of deductedItems) {
         try {
-          await Product.findByIdAndUpdate(deducted.productId, {
-            $inc: { stock: deducted.quantity },
-          });
+          const restored = await Product.findByIdAndUpdate(
+            deducted.productId,
+            { $inc: { stock: deducted.quantity } },
+            { new: true }
+          );
+          if (restored && restored.stock > 0) {
+            await Product.findByIdAndUpdate(deducted.productId, { isAvailable: true });
+          }
         } catch (rollbackErr) {
           console.error('[Inventory Rollback Error]:', rollbackErr.message);
         }
@@ -184,10 +208,20 @@ export const orderService = {
     return Order.find({ studentPhone: phone.trim() }).sort({ createdAt: -1 });
   },
 
-  async getAllOrders({ status, search, limit = 100, page = 1 }) {
+  async getAllOrders({ status, paymentStatus, paymentMethod, search, limit = 100, page = 1 }) {
     const query = {};
     if (status && status !== 'all') {
       query.status = status;
+    }
+    if (paymentStatus && paymentStatus !== 'all') {
+      query.paymentStatus = paymentStatus;
+    }
+    if (paymentMethod && paymentMethod !== 'all') {
+      if (paymentMethod === 'upi') {
+        query.paymentMethod = { $in: ['upi', 'upi_on_delivery'] };
+      } else {
+        query.paymentMethod = paymentMethod;
+      }
     }
 
     if (search && search.trim()) {
@@ -215,7 +249,21 @@ export const orderService = {
     };
   },
 
-  async updateOrderStatus(id, status, note = '', updatedBy = 'admin') {
+  async updateOrderStatus(id, statusOrPayload, note = '', updatedBy = 'admin') {
+    let newStatus;
+    let newPaymentStatus;
+    let noteText = note;
+    let adminUser = updatedBy;
+
+    if (typeof statusOrPayload === 'object' && statusOrPayload !== null) {
+      newStatus = statusOrPayload.status;
+      newPaymentStatus = statusOrPayload.paymentStatus;
+      noteText = statusOrPayload.note || note;
+      adminUser = statusOrPayload.updatedBy || updatedBy;
+    } else {
+      newStatus = statusOrPayload;
+    }
+
     const order = await Order.findById(id);
     if (!order) {
       const err = new Error('Order not found');
@@ -224,29 +272,48 @@ export const orderService = {
     }
 
     // Handle cancellation: restore stock once and safely
-    if (status === 'cancelled' && !order.stockRestored) {
+    if (newStatus === 'cancelled' && !order.stockRestored) {
       for (const item of order.items) {
         if (item.product) {
-          await Product.findByIdAndUpdate(item.product, {
-            $inc: { stock: item.quantity },
-          });
+          const restored = await Product.findByIdAndUpdate(
+            item.product,
+            { $inc: { stock: item.quantity } },
+            { new: true }
+          );
+          if (restored && restored.stock > 0) {
+            await Product.findByIdAndUpdate(item.product, { isAvailable: true });
+          }
         }
       }
       order.stockRestored = true;
       emitEvent('inventory:updated', { reason: 'order_cancelled', orderNumber: order.orderNumber });
     }
 
-    order.status = status;
-    if (status === 'delivered') {
-      order.paymentStatus = 'paid';
+    if (newStatus) {
+      order.status = newStatus;
+      if (newStatus === 'delivered' && order.paymentMethod === 'cash_on_delivery') {
+        order.paymentStatus = 'paid';
+      }
+
+      order.statusHistory.push({
+        status: newStatus,
+        timestamp: new Date(),
+        note: noteText || `Order marked as ${newStatus.replace(/_/g, ' ')}.`,
+        updatedBy: adminUser,
+      });
     }
 
-    order.statusHistory.push({
-      status,
-      timestamp: new Date(),
-      note: note || `Order marked as ${status.replace(/_/g, ' ')}.`,
-      updatedBy,
-    });
+    if (newPaymentStatus) {
+      order.paymentStatus = newPaymentStatus;
+      order.statusHistory.push({
+        status: order.status,
+        timestamp: new Date(),
+        note:
+          noteText ||
+          `Payment status updated to ${newPaymentStatus.replace(/_/g, ' ')} by ${adminUser}.`,
+        updatedBy: adminUser,
+      });
+    }
 
     const savedOrder = await order.save();
 
@@ -255,6 +322,10 @@ export const orderService = {
     emitEvent('analytics:updated');
 
     return savedOrder;
+  },
+
+  async updatePaymentStatus(id, paymentStatus, note = '', updatedBy = 'admin') {
+    return this.updateOrderStatus(id, { paymentStatus, note }, note, updatedBy);
   },
 
   async getDashboardAnalytics() {

@@ -9,10 +9,11 @@ export const SnackCard = ({ snack, onOpenDetails }) => {
 
   const cartItem = items.find((item) => item.product._id === snack._id);
   const quantityInCart = cartItem ? cartItem.quantity : 0;
-  const isOutOfStock = !snack.isAvailable || snack.stock <= 0;
+  const isOutOfStock = !snack.isAvailable || Number(snack.stock) <= 0;
 
   const handleIncrement = (e) => {
     e.stopPropagation();
+    if (isOutOfStock) return;
     if (quantityInCart < snack.stock) {
       if (quantityInCart === 0) {
         addItem(snack, 1);
@@ -41,7 +42,7 @@ export const SnackCard = ({ snack, onOpenDetails }) => {
     >
       {/* Top Header: Badge + Wishlist */}
       <div className="flex items-center justify-between gap-1 mb-2">
-        <div>
+        <div className="flex items-center gap-1.5 flex-wrap">
           {snack.hostelFavorite ? (
             <span className="inline-block px-2 py-0.5 rounded-full bg-brand-orange text-black font-extrabold text-[10px] uppercase tracking-wide">
               Bestseller
@@ -52,6 +53,23 @@ export const SnackCard = ({ snack, onOpenDetails }) => {
               <span>Veg</span>
             </span>
           ) : null}
+
+          {/* Availability Badge */}
+          {isOutOfStock ? (
+            <span
+              data-testid="stock-badge"
+              className="inline-block px-2 py-0.5 rounded-full bg-rose-950/90 text-rose-300 font-extrabold text-[10px] border border-rose-800"
+            >
+              Unavailable
+            </span>
+          ) : (
+            <span
+              data-testid="stock-badge"
+              className="inline-block px-2 py-0.5 rounded-full bg-emerald-950/80 text-emerald-300 font-extrabold text-[10px] border border-emerald-800"
+            >
+              In Stock · {snack.stock} available
+            </span>
+          )}
         </div>
 
         <button
@@ -68,7 +86,13 @@ export const SnackCard = ({ snack, onOpenDetails }) => {
       {/* Center Image */}
       <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#222222] flex items-center justify-center p-2 mb-3">
         <img
-          src={snack.imageUrl || snack.image}
+          src={
+            (Array.isArray(snack.images) &&
+              (snack.images.find((img) => img.isCover)?.url || snack.images[0]?.url)) ||
+            snack.imageUrl ||
+            snack.image ||
+            '/packs/lays.jpg'
+          }
           alt={snack.name}
           loading="lazy"
           className="max-h-full max-w-full object-contain group-hover:scale-105 transition-transform duration-300"
@@ -81,7 +105,7 @@ export const SnackCard = ({ snack, onOpenDetails }) => {
         {isOutOfStock && (
           <div className="absolute inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center">
             <span className="px-2.5 py-1 rounded-full bg-rose-950 text-rose-300 text-[11px] font-bold border border-rose-800">
-              Out of Stock
+              Unavailable
             </span>
           </div>
         )}
@@ -112,8 +136,9 @@ export const SnackCard = ({ snack, onOpenDetails }) => {
               <button
                 disabled
                 className="px-3 py-1.5 rounded-full bg-[#242424] text-slate-500 text-xs font-semibold cursor-not-allowed"
+                title="Unavailable"
               >
-                Out of Stock
+                Unavailable
               </button>
             ) : quantityInCart > 0 ? (
               <div

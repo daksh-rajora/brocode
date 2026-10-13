@@ -57,12 +57,19 @@ export const PAYMENT_METHODS = [
     badge: 'Popular',
   },
   {
-    id: 'upi_on_delivery',
-    label: 'UPI (Optional)',
-    subtitle: 'Scan QR at room door (GPay / PhonePe / Paytm)',
+    id: 'upi',
+    label: 'UPI',
+    subtitle: 'Scan QR code & pay instantly with any UPI app',
     badge: 'Instant',
   },
 ];
+
+export const UPI_CONFIG = {
+  recipientName: 'Dheeraj',
+  upiId: 'dheerajbhardwaj621@oksbi',
+  instruction: 'Scan this QR code with any UPI app and complete the payment.',
+  supportedApps: ['Google Pay', 'PhonePe', 'Paytm', 'BHIM', 'Cred'],
+};
 
 export const ORDER_STATUS_CONFIG = {
   placed: {

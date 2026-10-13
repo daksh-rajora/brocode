@@ -8,5 +8,6 @@ const router = Router();
 
 router.get('/', getSettings);
 router.put('/', requireAuth, requireAdmin, validateBody(updateStoreSettingSchema), updateSettings);
+router.patch('/', requireAuth, requireAdmin, validateBody(updateStoreSettingSchema), updateSettings);
 
 export default router;

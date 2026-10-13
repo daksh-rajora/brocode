@@ -353,4 +353,168 @@ describe('Requirement 8: Complete Customer-to-Admin Workflow & Real Inventory Te
       expect(singleRes.body.data.stock).toBe(30);
     });
   });
+
+  describe('Verification Suite: Database-Driven Stock Availability & Concurrency Scenarios', () => {
+    let testItem = null;
+
+    afterAll(async () => {
+      if (testItem?._id) {
+        await Product.findByIdAndDelete(testItem._id);
+      }
+    });
+
+    it('Scenario 2 & 3: Stock = 1 → allows 1 successful purchase, reduces stock to 0, and then blocks further purchases', async () => {
+      // Create product with stock = 1
+      const created = await Product.create({
+        name: 'Single Stock Midnight Brownie',
+        description: 'Rich dark chocolate brownie with exactly 1 unit left in stock',
+        price: 50,
+        stock: 1,
+        image: 'https://res.cloudinary.com/demo/image/upload/brownie.jpg',
+        isActive: true,
+      });
+      testItem = created;
+
+      expect(created.stock).toBe(1);
+      expect(created.isAvailable).toBe(true);
+
+      // 1. First purchase for 1 unit should succeed
+      const order1Res = await request(app)
+        .post('/api/v1/orders')
+        .send({
+          studentName: 'Rohan Gupta',
+          studentPhone: '9988776655',
+          hostelBlock: 'BH1',
+          roomNumber: '202',
+          items: [{ productId: testItem._id.toString(), quantity: 1 }],
+          paymentMethod: 'cash_on_delivery',
+          orderType: 'delivery',
+        });
+
+      expect(order1Res.status).toBe(201);
+      expect(order1Res.body.success).toBe(true);
+
+      // Verify stock in MongoDB is now 0 and isAvailable is false
+      const dbProdAfterOrder = await Product.findById(testItem._id);
+      expect(dbProdAfterOrder.stock).toBe(0);
+      expect(dbProdAfterOrder.isAvailable).toBe(false);
+
+      // 2. Second purchase attempt when stock = 0 must be blocked
+      const order2Res = await request(app)
+        .post('/api/v1/orders')
+        .send({
+          studentName: 'Sameer Verma',
+          studentPhone: '9988776656',
+          hostelBlock: 'BH1',
+          roomNumber: '203',
+          items: [{ productId: testItem._id.toString(), quantity: 1 }],
+          paymentMethod: 'cash_on_delivery',
+          orderType: 'delivery',
+        });
+
+      expect(order2Res.status).toBe(400);
+      expect(order2Res.body.success).toBe(false);
+      expect(order2Res.body.message).toMatch(/out of stock|insufficient stock/i);
+
+      // Stock remains strictly 0
+      const dbProdBlocked = await Product.findById(testItem._id);
+      expect(dbProdBlocked.stock).toBe(0);
+    });
+
+    it('Scenario 4: Admin changes stock from 0 to 15 → becomes available and reflects 15 in API', async () => {
+      const restockRes = await request(app)
+        .patch(`/api/v1/products/${testItem._id}/stock`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ stock: 15 });
+
+      expect(restockRes.status).toBe(200);
+      expect(restockRes.body.success).toBe(true);
+      expect(restockRes.body.data.stock).toBe(15);
+      expect(restockRes.body.data.isAvailable).toBe(true);
+
+      // Verify database reflects 15
+      const dbProd = await Product.findById(testItem._id);
+      expect(dbProd.stock).toBe(15);
+      expect(dbProd.isAvailable).toBe(true);
+
+      // Verify public API response reflects 15
+      const apiRes = await request(app).get(`/api/v1/products/${testItem._id}`);
+      expect(apiRes.status).toBe(200);
+      expect(apiRes.body.data.stock).toBe(15);
+      expect(apiRes.body.data.isAvailable).toBe(true);
+    });
+
+    it('Scenario 5: Admin reduces stock from 15 to 0 → becomes unavailable in database and API', async () => {
+      const destockRes = await request(app)
+        .patch(`/api/v1/products/${testItem._id}/stock`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ stock: 0 });
+
+      expect(destockRes.status).toBe(200);
+      expect(destockRes.body.success).toBe(true);
+      expect(destockRes.body.data.stock).toBe(0);
+      expect(destockRes.body.data.isAvailable).toBe(false);
+
+      // Verify database reflects 0 and isAvailable false
+      const dbProd = await Product.findById(testItem._id);
+      expect(dbProd.stock).toBe(0);
+      expect(dbProd.isAvailable).toBe(false);
+
+      // Verify public API response reflects 0 and isAvailable false
+      const apiRes = await request(app).get(`/api/v1/products/${testItem._id}`);
+      expect(apiRes.status).toBe(200);
+      expect(apiRes.body.data.stock).toBe(0);
+      expect(apiRes.body.data.isAvailable).toBe(false);
+    });
+
+    it('Scenario 6: Two simultaneous orders must never oversell available stock', async () => {
+      // Create product with exactly 1 unit
+      const raceProduct = await Product.create({
+        name: 'Highlander Last Energy Drink',
+        description: 'Only 1 can remaining in hostel fridge',
+        price: 50,
+        stock: 1,
+        image: 'https://res.cloudinary.com/demo/image/upload/drink.jpg',
+        isActive: true,
+      });
+
+      const orderPayloadA = {
+        studentName: 'Student Alpha',
+        studentPhone: '9111111111',
+        hostelBlock: 'BH3-A',
+        roomNumber: '101',
+        items: [{ productId: raceProduct._id.toString(), quantity: 1 }],
+        paymentMethod: 'cash_on_delivery',
+        orderType: 'delivery',
+      };
+
+      const orderPayloadB = {
+        studentName: 'Student Beta',
+        studentPhone: '9222222222',
+        hostelBlock: 'BH3-B',
+        roomNumber: '102',
+        items: [{ productId: raceProduct._id.toString(), quantity: 1 }],
+        paymentMethod: 'cash_on_delivery',
+        orderType: 'delivery',
+      };
+
+      // Launch both requests simultaneously
+      const [resA, resB] = await Promise.all([
+        request(app).post('/api/v1/orders').send(orderPayloadA),
+        request(app).post('/api/v1/orders').send(orderPayloadB),
+      ]);
+
+      const statuses = [resA.status, resB.status];
+      // Exactly one order must succeed (201) and the other must be rejected (400)
+      expect(statuses).toContain(201);
+      expect(statuses).toContain(400);
+
+      // Final stock in database must be exactly 0, never negative
+      const finalDb = await Product.findById(raceProduct._id);
+      expect(finalDb.stock).toBe(0);
+      expect(finalDb.isAvailable).toBe(false);
+
+      await Product.findByIdAndDelete(raceProduct._id);
+    });
+  });
 });

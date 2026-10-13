@@ -23,7 +23,10 @@ const getInitialState = () => {
           : 'BH1',
         roomNumber: parsedInfo?.roomNumber || '',
         deliveryNotes: parsedInfo?.deliveryNotes || '',
-        paymentMethod: parsedInfo?.paymentMethod || 'upi_on_delivery',
+        paymentMethod:
+          parsedInfo?.paymentMethod === 'cash_on_delivery'
+            ? 'cash_on_delivery'
+            : 'upi',
       },
     };
   } catch (error) {
@@ -36,7 +39,7 @@ const getInitialState = () => {
         hostelBlock: 'BH1',
         roomNumber: '',
         deliveryNotes: '',
-        paymentMethod: 'upi_on_delivery',
+        paymentMethod: 'upi',
       },
     };
   }
@@ -46,23 +49,26 @@ const cartReducer = (state, action) => {
   switch (action.type) {
     case 'ADD_ITEM': {
       const { product, quantity = 1 } = action.payload;
+      const stock = product.stock !== undefined ? Number(product.stock) : 99;
+      if (stock <= 0) {
+        return state;
+      }
       const existingIndex = state.items.findIndex((item) => item.product._id === product._id);
 
       let newItems;
       if (existingIndex > -1) {
         newItems = [...state.items];
         const newQty = newItems[existingIndex].quantity + quantity;
-        const maxStock = product.stock ?? 99;
         newItems[existingIndex] = {
           ...newItems[existingIndex],
-          quantity: Math.min(newQty, maxStock),
+          quantity: Math.min(newQty, stock),
         };
       } else {
         newItems = [
           ...state.items,
           {
             product,
-            quantity: Math.min(quantity, product.stock ?? 99),
+            quantity: Math.min(quantity, stock),
           },
         ];
       }
@@ -87,7 +93,7 @@ const cartReducer = (state, action) => {
       }
       const newItems = state.items.map((item) => {
         if (item.product._id === productId) {
-          const maxStock = item.product.stock ?? 99;
+          const maxStock = item.product.stock !== undefined ? Number(item.product.stock) : 99;
           return { ...item, quantity: Math.min(quantity, maxStock) };
         }
         return item;
@@ -97,6 +103,28 @@ const cartReducer = (state, action) => {
 
     case 'CLEAR_CART': {
       return { ...state, items: [] };
+    }
+
+    case 'SYNC_STOCK': {
+      const freshProducts = action.payload || [];
+      const prodMap = new Map(freshProducts.map((p) => [p._id, p]));
+      const newItems = state.items.map((item) => {
+        const fresh = prodMap.get(item.product._id);
+        if (fresh) {
+          const freshStock = Number(fresh.stock);
+          return {
+            ...item,
+            product: {
+              ...item.product,
+              ...fresh,
+              stock: freshStock,
+              isAvailable: fresh.isAvailable && freshStock > 0,
+            },
+          };
+        }
+        return item;
+      });
+      return { ...state, items: newItems };
     }
 
     case 'UPDATE_DELIVERY_INFO': {
@@ -138,6 +166,10 @@ export const CartProvider = ({ children }) => {
     dispatch({ type: 'CLEAR_CART' });
   };
 
+  const syncStock = (products) => {
+    dispatch({ type: 'SYNC_STOCK', payload: products });
+  };
+
   const updateDeliveryInfo = (info) => {
     dispatch({ type: 'UPDATE_DELIVERY_INFO', payload: info });
   };
@@ -160,6 +192,7 @@ export const CartProvider = ({ children }) => {
         removeItem,
         updateQuantity,
         clearCart,
+        syncStock,
         updateDeliveryInfo,
       }}
     >
